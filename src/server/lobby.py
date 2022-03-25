@@ -1,8 +1,6 @@
 import json
 from socket import socket
 from typing import Optional, Tuple
-
-from pyrsistent import T
 from .connection import Conn
 from threading import Thread, Lock
 from logging import Logger
@@ -26,7 +24,8 @@ class Lobby(Thread):
     sock: socket
     running: bool
     in_game: bool
-    data_lock: Lock
+    game_state_lock: Lock
+    game_state: list
 
     def __init__(self, id: str, sock: socket, capacity: int = 4):
         super(Lobby, self).__init__()
@@ -38,7 +37,8 @@ class Lobby(Thread):
         self.logger.info('Lobby init\'d')
         self.running = False
         self.in_game = False
-        self.data_lock = Lock()
+        self.game_state_lock = Lock()
+        self.game_state = []
 
     def add_player(self, conn: Conn) -> bool:
         """
@@ -134,14 +134,43 @@ class Lobby(Thread):
         for c in conns:
             c.send(data)
 
-    def _handle_game_action(self, data: bytes, conn: Conn):
+    def _apply_state_change(self, state: list) -> bool:
         """
-        Handles game actions.
+        Applies a state change to the game state.
+
+        Args:
+            state: The state change to be applied.
+
+        Returns:
+            True if the state change was applied, False otherwise.
+        """
+        # TODO: implement state change
+        return True
+
+    def _handle_game_action(self, data: list[str], conn: Conn):
+        """
+        Handles game actions received from a conn.
 
         :param data: The data received.
         :param conn: The conn that sent the data.
         """
-        pass
+
+        if not self.in_game:
+            self.logger.error('Game not in progress, {conn}')
+            return
+
+        # send an ACK to the client and multicast the action to all other clients
+        multicast = {
+            'action': 'state',
+            'state': self.game_state
+        }
+
+        unicast = {
+            'action': 'ack'
+        }
+
+        self.multicast(json.dumps(multicast).encode('utf-8'))
+        self.unicast(json.dumps(unicast).encode('utf-8'), conn)
 
     def handle_data(self, data: bytes, conn: Conn):
         """
@@ -150,6 +179,12 @@ class Lobby(Thread):
         :param data: The data received.
         :param conn: The conn that sent the data.
         """
+
+        # check whether the connection is in the lobby
+        if conn not in self.conns:
+            self.logger.info('Connection not found, {conn}')
+            return
+
         # Payload types that are handled by the lobby (from client):
         #   Game Action
         #   Leave Lobby
@@ -163,14 +198,15 @@ class Lobby(Thread):
 
         action = incoming['action']
 
+        # handle the action
         if action == 'leave':
             self.logger.info('{conn} has left the lobby.')
             self.rm_player(conn)
         elif action == 'game':
             self.logger.info('Game action received from {conn}.')
-            self._handle_game_action(data, conn)
+            self._handle_game_action(incoming['state'], conn)
         else:
-            self.logger.info('Invalid action {action} from {conn}.')
+            self.logger.info('Invalid action: \'{action}\' from {conn}.')
 
     def run(self):
         """
@@ -192,16 +228,8 @@ class Lobby(Thread):
                 # read incoming data
                 data, addr = self.sock.recvfrom(1024)
 
-                # find whether the data is from a known conn
-                for c in self.conns:
-                    if c.address == addr:
-                        # spawn a thread to handle the data
-                        Thread(target=self.handle_data, args=(data, c)).start()
-                        break
-
-                #
-
-                # send data to all conns
+                # Spawn a thread to handle the data
+                Thread(target=self.handle_data, args=(data, addr)).start()
 
     def terminate(self):
         """
