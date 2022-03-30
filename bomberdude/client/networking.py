@@ -1,23 +1,29 @@
 from __future__ import annotations
-import json
+from dataclasses import dataclass, field
+from typing import Tuple, List
 from threading import Thread, Lock
 from socket import socket, AF_INET6, SOCK_DGRAM
-from typing import Optional, Tuple
 from logging import Logger
+from common.payload import Payload, ACCEPT, LEAVE, JOIN
 
 
+@ dataclass
 class NetClient:
-    lobby_id: str  # in case multiple lobbies are implemented
-    uuid: str
-    lock: Lock
     port: int
     remote: Tuple[str, int]
-    sock: ThreadedSocket
-    queue: list
-    logger: Logger
+    lobby_uuid: str = field(default_factory=str)  # init'd when joining a lobby
+    sock: ThreadedSocket = field(init=False)  # init'd when joining a lobby
+    lock: Lock = field(default_factory=Lock)
+    queue: List[Tuple[bytes, Tuple[str, int]]] = field(default_factory=list)
+    logger: Logger = field(init=False)
+    player_uuid: str = field(default='')
+
+    def __post_init__(self):
+        self.logger = Logger('NetClient')
+        self.logger.info('Client init\'d')
 
     def __init__(self, remote: Tuple[str, int], port: int):
-        self.lobby_id = ''
+        self.lobby_uuid = ''
         self.lock = Lock()
         self.port = port
         self.remote = remote
@@ -29,12 +35,13 @@ class NetClient:
         """
         Joins the server, upon joining the ThreadedSocket will start listening.
         """
-        payload = json.dumps({'action': 'join', 'lobby': lobby_id, "uuid": ''})
+
+        payload = Payload(JOIN, b'', lobby_id, '', 0)
 
         sock = socket(AF_INET6, SOCK_DGRAM)
         sock.bind(('', self.port))
         sock.setblocking(False)
-        sock.sendto(payload.encode(), self.remote)
+        sock.sendto(payload.to_bytes(), self.remote)
 
         while True:
             try:
@@ -42,13 +49,15 @@ class NetClient:
 
                 if addr == self.remote:
                     if resp:
-                        data = json.loads(resp)
-                        if data['action'] == 'joined':
-                            self.uuid = data['uuid']
-                            self.lobby_id = data['lobby']
+                        data = Payload.from_bytes(resp)
+
+                        if data.type == ACCEPT:
+                            self.player_uuid = data.player_uuid
+                            self.lobby_uuid = data.lobby_uuid
                             self.sock = ThreadedSocket(sock, self.lock, self)
                             self.sock.start()
-                            self.logger.info('Client joined lobby')
+                            self.logger.info(
+                                'Client joined lobby %s', self.lobby_uuid)
                             return True
                         else:
                             self.logger.warning(
@@ -67,10 +76,10 @@ class NetClient:
         """
         Method used to leave the game.
         """
-
         self.logger.info('Client leaving lobby by user request.')
-        payload = json.dumps({'action': 'leave', 'uuid': self.uuid})
-        self.send(payload.encode())
+        # TODO: Fix seq_num across all files
+        payload = Payload(LEAVE, b'', self.lobby_uuid, self.player_uuid, 0)
+        self.send(payload.to_bytes())
 
         # terminate the threaded socket
         self.sock.terminate()
@@ -82,7 +91,6 @@ class NetClient:
 
         :param data: The payload to be sent.
         """
-        # TODO: should we keep this socket open?
         sock = socket(AF_INET6, SOCK_DGRAM)
         sock.sendto(data, self.remote)
         sock.close()
@@ -94,17 +102,17 @@ class NetClient:
         :param data: The data payload to be handled.
         """
         try:
-            data = json.loads(data)
+            incoming = Payload.from_bytes(data)
             # TODO
             # parse the events
             # add it to the queue
             # the UI client / game loop will later process the queue
 
             return data
-        except json.JSONDecodeError:
-            print('Invalid JSON received')
+        except Exception as e:
+            self.logger.warning('Invalid payload received: %s', e)
 
-    @property
+    @ property
     def messages(self) -> list:
         """
         Method used to get messages tuples from the queue.

@@ -1,17 +1,15 @@
-# Tradicionais
-- Checkers    (2)
-- Chess       (2)
-- Hangman     (N)
-- Abalone     (2)
+# Bomberdude, a Bomberman clone
 
-# 
-- Battleships (2)
+This is a Bomberman clone written in [Python](https://www.python.org/) and [Pygame](https://www.pygame.org/) for our AER course.
 
-# Cartas:
-- Uno         (N)
-- Sueca       (4)
+### Requirements
 
-# ~Memes~
-- Eduroam Sim
-- City Builder
-- Tic-Tac-Toe
+```sh
+pip install shortuuid pygame
+
+```
+
+##### Authors
+ - [Luís Pereira](https://github.com/LuisPereira23)
+ - [Pedro António](https://github.com/Ankeeprojects)
+ - [Tiago Sousa](https://github.com/Existency)

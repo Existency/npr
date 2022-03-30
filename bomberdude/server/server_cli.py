@@ -1,4 +1,5 @@
 from logging import Logger
+from typing import Optional
 from .server import Server
 import argparse
 
@@ -43,7 +44,7 @@ class ServerCLI:
 
         self._terminate()
 
-    def _status(self):
+    def _status(self, lobby: Optional[str] = None):
         """
         Prints the status of the server.
         This includes the number of players currently connected and the number of lobbies.
@@ -51,15 +52,49 @@ class ServerCLI:
         # get number of lobbies
         num_lobbies = len(self.srv.lobbies)
 
-    def _help(self):
-        pass
+    def _help(self, cmd: Optional[str] = None):
+        """
+        Prints the help tips for the CLI.
+
+        :param cmd: The command to get help for.
+        """
+        if cmd is None or cmd == 'help':
+            print("""
+            Commands:
+                help: Prints this help message.
+                status: Prints the status of the server.
+                exit | stop | quit: Terminates the server.
+            """)
+
+        elif cmd == 'status':
+            print("""
+            Commands:
+                status: Prints the status of the server.
+                exit | stop | quit: Terminates the server.
+            """)
+
+        elif cmd == 'exit' or cmd == 'stop' or cmd == 'quit':
+            print("""
+            Commands:
+                exit | stop | quit: Terminates the server.
+            """)
+
+        else:
+            print("Unknown command.")
+            self._help()
+
+    def terminate(self):
+        """
+        Terminates the CLI and socket server.
+        """
+        self.logger.warning("Server shutting down by user request.")
+        self.run = False
 
     def _terminate(self):
         """
         Terminates the CLI and socket server.
         """
-        self.logger.info("Server shutting down.")
-        self.run = False
+        self.logger.info("Terminating CLI.")
         self.srv.terminate()
         self.srv.join()
 

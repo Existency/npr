@@ -124,3 +124,24 @@ Client(Others) -> Server
       "seq_num": seq_num
    }
 
+
+# Lobby actions
+## Lobby checking whether the game can start
+
+Lobby -> Client
+
+   {
+      "action": "check",
+      "lobby": "lobbyid",
+      "uuid": "playerid",
+      "seq_num": seq_num,
+   }
+
+Client -> Lobby
+   - Must ack this seq_num in particular
+
+   {
+      "action": "ack",
+      "seq_num": seq_num
+   }
+
