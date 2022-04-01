@@ -6,7 +6,7 @@ from .lobby import Lobby
 from .connection import Conn
 from threading import Thread
 import socket
-from common.misc import uuid
+from bomberdude.common.uuid import uuid
 
 
 class Server(Thread):

@@ -2,7 +2,7 @@ from logging import Logger
 from typing import Tuple
 from dataclasses import dataclass, field
 from socket import socket, AF_INET6, SOCK_DGRAM
-from common.misc import uuid
+from bomberdude.common.uuid import uuid
 
 
 @dataclass

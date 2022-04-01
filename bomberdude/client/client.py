@@ -19,11 +19,11 @@ class Client:
             # handle events
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    self.net.close()
+                    self.net.terminate()
                     return
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
-                        self.net.close()
+                        self.net.terminate()
                         return
 
             # update
@@ -38,11 +38,11 @@ class Client:
             self.clock.tick(60)
 
     def stop(self):
-        self.net.close()
+        self.net.terminate()
         pygame.quit()
 
     def send(self, data):
-        self.net.send(data)
+        self.net.unicast(data)
 
     def messages(self) -> list:
         """
