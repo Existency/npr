@@ -1,12 +1,12 @@
 from __future__ import annotations
+from common.state import Change, parse_payload
+from common.payload import KALIVE, Payload, ACCEPT, LEAVE, JOIN, REDIRECT, REJECT
 from dataclasses import dataclass, field
+from logging import Logger
 from time import sleep
 from typing import Tuple, List
 from threading import Thread, Lock
 from socket import socket, AF_INET6, SOCK_DGRAM
-from logging import Logger
-from bomberdude.common.state import Change, parse_payload
-from bomberdude.common.payload import REDIRECT, REJECT, Payload, ACCEPT, LEAVE, JOIN
 
 
 @ dataclass
@@ -24,8 +24,8 @@ class NetClient(Thread):
     player_uuid: str = field(default='')
     sock: ThreadedSocket = field(init=False)  # init'd when joining the server
     inbound_lock: Lock = field(default_factory=Lock)
-    queue_inbound: List[Tuple[List[Change], Tuple[str, int]]
-                        ] = field(default_factory=list)
+    queue_inbound: List[Tuple[List[Change], Tuple[str, int]]] = field(
+        default_factory=list)
     outbound_lock: Lock = field(default_factory=Lock)
     queue_outbound: List[Tuple[Payload, Tuple[str, int]]
                          ] = field(default_factory=list)
@@ -146,6 +146,10 @@ class NetClient(Thread):
             # with self.outbound_lock:
             #    _outbound = self.queue_outbound
             #    self.queue_outbound = []
+
+            # send the keepalive message to the server
+            kalive = Payload(KALIVE, b'', self.lobby_uuid, self.player_uuid, 0)
+            self.unicast(kalive.to_bytes())
 
             # A server tick is 1/30th of a second
             sleep(0.0333)

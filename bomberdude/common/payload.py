@@ -5,7 +5,7 @@ import struct
 # Payload types
 ACCEPT = 0x01
 REJECT = 0x02
-HELLO = 0x03
+KALIVE = 0x03
 LEAVE = 0x04
 ACK = 0x04
 JOIN = 0x05

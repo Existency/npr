@@ -1,118 +1,13 @@
 from __future__ import annotations
-from common.payload import ACTIONS, LEAVE, Payload
+from concurrent.futures import ThreadPoolExecutor
+from bomberdude.common.state import GameState
 from .connection import Conn
+from common.payload import ACTIONS, KALIVE, LEAVE, Payload
 from logging import Logger
-from socket import socket
+from socket import AF_INET6, socket, SOCK_DGRAM
 from threading import Thread, Lock
 import time
-from typing import Optional, Tuple
-
-
-class LobbySocket(Thread):
-    """
-    Background task to receive messages from players,
-    processes them and appends them in the Lobby's action_queue_inbound.
-    """
-    # socket to receive messages from players
-    sock: socket
-    # Lobby to which the socket belongs
-    lobby: Lobby
-    # Logger
-    logger: Logger
-    # game state lock
-    game_state_lock: Lock
-
-    def __init__(self, sock: socket, lobby: Lobby, game_state_lock: Lock):
-        """
-        Initializes the LobbySocket.
-
-        :param sock: Socket to receive messages from players.
-        :param lobby: Lobby to which the socket belongs.
-        """
-        super(LobbySocket, self).__init__()
-        self.sock = sock
-        self.lobby = lobby
-        self.game_state_lock = game_state_lock
-        self.running = False
-        self.logger = Logger("LobbySocket")
-        self.logger.info("Starting LobbySocket on port %d",
-                         sock.getsockname()[1])
-
-    def handle_data(self, data: bytes, addr: Tuple[str, int]):
-        """
-        Handles a message received from the socket.
-
-        :param data: The message received from the socket.
-        :param addr: The address that sent the message.
-        """
-
-        # check whether the message comes from a valid player
-        player = self.lobby.get_player(addr)
-
-        if player is None:
-            self.logger.info("Received message from invalid player %s", addr)
-            return  # TODO: add a block mechanism to prevent spamming the server
-
-        msg = Payload.from_bytes(data)
-
-        # if the message seq_num is older than the conn's seq_num, ignore it
-        if msg.seq_num < player.seq_num:
-            self.logger.info("Received message with old seq_num %d from %s",
-                             msg.seq_num, addr)
-            return
-
-        if msg.type == ACTIONS:
-            # add the message to the lobby's action_queue_inbound
-            self.lobby.action_queue_inbound.append(msg.data)
-        elif msg.type == LEAVE:
-            # remove the player from the lobby
-            self.lobby.remove_player(player)
-        else:
-            self.logger.info("Received invalid payload: %s", msg)
-            return
-
-    @property
-    def port(self) -> int:
-        """
-        Gets the port of the lobby.
-        """
-        return self.sock.getsockname()[1]
-
-    @property
-    def ip(self) -> str:
-        """
-        Gets the IP of the lobby.
-        """
-        return self.sock.getsockname()[0]
-
-    @property
-    def addr(self) -> Tuple[str, int]:
-        """
-        Gets the address of the lobby.
-        """
-        return self.sock.getsockname()
-
-    def run(self):
-        """
-        The main loop for the LobbySocket.
-
-        New messages are received from the socket and processed.
-        """
-        self.running = True
-        while self.running:
-            # receive message from socket
-            data, addr = self.sock.recvfrom(1024)
-            # spawn a new thread to handle the message
-            Thread(target=self.handle_data, args=(data, addr)).start()
-
-    def stop(self):
-        """
-        Stops the LobbySocket.
-        """
-        self.running = False
-        self.sock.close()
-        self.logger.info("Stopped LobbySocket on port %d",
-                         self.sock.getsockname()[1])
+from typing import List, Optional, Tuple
 
 
 class Lobby(Thread):
@@ -128,11 +23,11 @@ class Lobby(Thread):
     # list of players currently present in the lobby
     conns: list
     # list of actions that are yet to be handled
-    action_queue_inbound: list
+    action_queue_inbound: List[Payload]
     # list of actions that are yet to be sent
     action_queue_outbound: list
     # current state of the game
-    game_state: list
+    game_state: GameState
     # lock used to protect game state from multiple thread access
     game_state_lock: Lock
     # flag to indicate whether the lobby has a running game
@@ -142,7 +37,7 @@ class Lobby(Thread):
     # flag to indicate whether the lobby is running
     running: bool
     # socket used to receive data from clients
-    sock: LobbySocket
+    sock: socket
     # lobby uuid
     uuid: str
 
@@ -152,13 +47,13 @@ class Lobby(Thread):
         self.conns = []
         self.action_queue_inbound = []
         self.action_queue_outbound = []
-        self.game_state = []
         self.game_state_lock = Lock()
+        self.game_state = GameState(self.game_state_lock, {})
         self.in_game = False
         self.logger = Logger('Lobby')
         self.running = False
         self.uuid = uuid
-        self.sock = LobbySocket(sock, self, self.game_state_lock)  # TODO
+        self.sock = socket(AF_INET6, SOCK_DGRAM)
         self.logger.info('Lobby init\'d')
 
     def add_player(self, conn: Conn) -> bool:
@@ -237,21 +132,21 @@ class Lobby(Thread):
         Returns:
             The address of the lobby.
         """
-        return self.sock.addr
-
-    @property
-    def port(self) -> int:
-        """
-        Fetches the port of the lobby.
-        """
-        return self.sock.port
+        return self.sock.getsockname()
 
     @property
     def ip(self) -> str:
         """
         Fetches the ip address of the lobby.
         """
-        return self.sock.ip
+        return self.sock.getsockname()[0]
+
+    @property
+    def port(self) -> int:
+        """
+        Fetches the port of the lobby.
+        """
+        return self.sock.getsockname()[1]
 
     # TODO: Find out how ipv6 will affect this
     def unicast(self, data: bytes, conn: Conn):
@@ -277,65 +172,136 @@ class Lobby(Thread):
         conns = [c for c in self.conns if c != blacklist]
 
         # send data to all conns
+
         for c in conns:
             c.send(data)
 
-    def _apply_state_change(self, state: list) -> bool:
+    def _handle_incoming_data(self):
         """
-        Applies a state change to the game state.
+        This method should not be called directly.
 
-        :param state: The state change to be applied.
-        :return: True if the state change was applied successfully.
+        Method that will run in a separate thread to handle incoming data.
         """
-        # TODO: implement state change
-        return True
+        while self.running:
+            time.sleep(0.001)
 
-    def _handle_game_action(self, data: bytes, conn: Conn):
+            try:
+                data, addr = self.sock.recvfrom(1024)
+
+                # get the conn that sent the data
+                conn = self.get_player(addr)
+
+                if conn is None:
+                    # TODO: Change this later for NDN redirect support
+                    self.logger.debug('Connection not found, {conn}')
+                    continue
+
+                # parse the data
+                payload = Payload.from_bytes(data)
+
+                # If the payload's sequence number is equal or older than the current one, discard
+                if payload.seq_num <= conn.seq_num:
+                    self.logger.debug('Sequence number is older, {conn}')
+                    continue
+
+                # If it's an action, append it to the action queue
+                if payload.type == ACTIONS:
+                    with self.game_state_lock:
+                        self.action_queue_inbound.append(payload)
+                    self.logger.debug(
+                        'Appended action to action queue, {conn}')
+
+                elif payload.type == LEAVE:
+                    try:
+                        self.remove_player(conn)
+                        self.logger.debug(
+                            'Removed conn from lobby, {conn}', conn)
+                    except ValueError:
+                        self.logger.error(
+                            'Attempt to remove unexistent connection, {conn}', conn)
+
+                elif payload.type == KALIVE:
+                    conn.kalive()
+
+                else:
+                    # Unhandled payload type
+                    self.logger.error(
+                        'Unhandled payload type, {payload.type}', payload.type)
+
+            except Exception as e:
+                self.logger.error('Error in _handle_incoming_data, {e}')
+
+    def _handle_connection_timeouts(self):
         """
-        Handles game actions received from a conn.
+        This method should not be called directly.
 
-        :param data: The data received.
-        :param conn: The conn that sent the data.
+        Method that will run in a separate thread to handle connection timeouts.
         """
+        while self.running:
+            conns = [c for c in self.conns if c.last_kalive < time.time() - 10]
+            map(self.remove_player, conns)
+            time.sleep(1)
 
-        if not self.in_game:
-            self.logger.error('Game not in progress, {conn}')
-            return
+    def _handle_game_state_changes(self):
+        """
+        This method should not be called directly.
 
-        # send an ACK to the client and multicast the action to all other clients
-        # multicast = {
-        #    'action': 'state',
-        #    'state': self.game_state
-        # }
-        #
-        #
-        #
-        # unicast = {
-        #    'action': 'ack'
-        # }
-        #
-        # self.multicast(json.dumps(multicast).encode('utf-8'))
-        #self.unicast(json.dumps(unicast).encode('utf-8'), conn)
+        Method that will run in a separate thread to handle game state changes.
+        """
+        while self.running:
+            # TODO: Handle game state changes
+            while not self.is_full:
+                # wait until the lobby is full to start the game
+                time.sleep(0.03)
+
+            self.in_game = True
+            while self.in_game:
+                _incoming_changes = []
+
+                with self.game_state_lock:
+                    _incoming_changes = self.action_queue_inbound
+                    self.action_queue_inbound = []
+
+                # Unpack all incoming changes
+                for payload in _incoming_changes:
+                    changes = payload.data
+                    self.game_state.apply_state(changes)
+
+                time.sleep(0.03)
+
+    def _handle_outgoing(self):
+        """
+        This method should not be called directly.
+
+        Method running in a separate thread to handle outgoing data.
+        The data to be sent is taken from the outbound action queue.
+        """
+        while self.running:
+            # get the queue of actions to be sent
+
+            time.sleep(0.001)
 
     def run(self):
         """
-        Main game server loop.
+        Game server main loop.
+
+        This method spawns a threadpool to handle certain tasks.
+        Tasks are:
+        - Connection timeouts
+        - Game state changes
+        - Incoming data
+        - Outgoing data
         """
         self.running = True
-        while self.running:
-            # TODO: Handle game actions
-            # TODO: Handle leave lobby
-            # check whether we have enough players to start the game
-            while not self.is_full:
-                self.logger.info('Waiting for more players')
-                # Wait for more players to join
-                time.sleep(0.005)  # TODO: Change this to a better solution
-                pass
 
-            self.in_game = True
-            self.logger.info('Game starting soon™')
-            while self.in_game:
-                pass
+        self.logger.info('Lobby started')
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            executor.submit(self._handle_connection_timeouts)
+            executor.submit(self._handle_game_state_changes)
+            executor.submit(self._handle_incoming_data)
+            # executor.submit(self._handle_outgoing)
+            executor.shutdown(wait=True)
 
     def terminate(self):
         """
@@ -343,7 +309,6 @@ class Lobby(Thread):
         """
         self.logger.info('Terminating lobby')
         self.running = False
-        self.sock.stop()
-        self.sock.join()
+
 
 # TODO: Implement test suite

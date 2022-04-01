@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import singledispatchmethod
+import struct
 from typing import Dict, List, Optional, Tuple
 from threading import Lock
 from .payload import ACTIONS, Payload
@@ -75,7 +76,18 @@ def change_list(data: bytes) -> List[Change]:
     """
     Converts a byte array to a list of Change objects.
     """
-    return [Change.from_bytes(data[i:i + 10]) for i in range(0, len(data), 10)]
+    # apply Change(data[i:i + 6]) to each i in range(0, len(data), 6), use a map
+    # use a list comprehension to map the result of the map to a list of Change objects
+    # if the constructor returns None, discard the change
+    # return the list of changes
+    changes = []
+
+    for i in range(0, len(data), 6):
+        change = Change.from_bytes(data[i:i + 6])
+        if change:
+            changes.append(change)
+
+    return changes
 
 
 @dataclass
@@ -87,29 +99,34 @@ class Change:
         curr (x, y, t): The current position and type of tile.
         next (x, y, t): The next position and type of tile.
     """
-    uuid: str
     curr: Tuple[int, int, int]
     next: Tuple[int, int, int]
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> Change:
+    def from_bytes(cls, data: bytes) -> Change | None:
         """
         Creates a Change object from a byte array.
         """
-        return cls(data[:4].decode('utf-8'), (data[4], data[5], data[6]), (data[7], data[8], data[9]))
+        try:
+            x, y, t = struct.unpack('!BBB', data[:3])
+            _x, _y, _t = struct.unpack('!BBB', data[3:6])
+            return Change((x, y, t), (_x, _y, _t))
+        except struct.error:
+            return None
 
     def to_bytes(self) -> bytes:
         """
         Converts the Change object to a byte array.
         """
-        return self.uuid.encode('utf-8') + bytes(self.curr) + bytes(self.next)
+
+        return bytes(self.curr) + bytes(self.next)
 
 
 @dataclass
 class GameState:
-    state: List[List[int]]
-    players: Dict[int, Tuple[str, int, int]]
     lock: Lock
+    players: Dict[int, Tuple[int, int]]  # {id: (x, y)}
+    state: List[List[int]] = field(default_factory=lambda: state)
     mode: int = field(default=0)  # defaults to 0 for player, 1 for server
     player_status: Dict[str, bool] = field(default_factory=dict)
 
@@ -121,23 +138,22 @@ class GameState:
         """
         return self.state
 
-    def get_players(self) -> list[str]:
+    def get_players(self) -> list[int]:
         """Returns the players of the game.
 
         Returns:
             dict: The players of the game.
         """
-        return [player[0] for player in self.players.values()]
+        return list(self.players.keys())
 
-    def get_player_positions(self) -> Dict[str, Tuple[int, int]]:
+    def get_player_positions(self) -> Dict[int, Tuple[int, int]]:
         """Returns the positions of the players.
 
         Returns:
             dict: The positions of the players.
         """
-        return {player[0]: (player[1], player[2]) for player in self.players.values()}
+        return self.players
 
-    @singledispatchmethod
     def apply_state(self, data: bytes):
         """Applies the changes to the state of the game.
 
@@ -153,39 +169,7 @@ class GameState:
         else:
             for change in changes:
                 # if the player is not in the game/is dead, skip the change
-                if not self.player_status.get(change.uuid):
-                    continue
-                else:
-                    # TODO: apply changes to the gamestate
-                    pass
-
-    @apply_state.register
-    def _(self, changes: list[Change]):
-        """Applies the changes to the state of the game.
-
-        Args:
-            changes (list[Change]): The changes to be applied.
-        """
-        if self.mode == 0:
-            # Player mode
-            # Doesn't do any checks
-            pass
-        else:
-            for change in changes:
-                # if the player is not in the game/is dead, skip the change
-                if not self.player_status.get(change.uuid):
-                    continue
-                else:
-                    pass
-
-    @apply_state.register
-    def _(self, change: Change):
-        """Applies the changes to the state of the game.
-
-        Args:
-            change (Change): The change to be applied.
-        """
-        pass
+                pass
 
 
 # TODO: implement test suite

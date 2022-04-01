@@ -1,12 +1,12 @@
-from logging import Logger
-from typing import Tuple
-
-from common.payload import Payload, ACCEPT, REJECT, JOIN
-from .lobby import Lobby
 from .connection import Conn
-from threading import Thread
+from .lobby import Lobby
+from common.payload import Payload, ACCEPT, REJECT, JOIN
+from common.uuid import uuid
+from logging import Logger
+import time
 import socket
-from bomberdude.common.uuid import uuid
+from threading import Thread
+from typing import Tuple
 
 
 class Server(Thread):
@@ -147,7 +147,7 @@ class Server(Thread):
             name = inc.data.decode('utf-8') if inc.data != b'' else 'anonymous'
 
             # create a new connection for the client
-            conn = Conn(addr, name)
+            conn = Conn(addr, name, int(time.time()))
             # add the connection to the lobby
             lobby.add_player(conn)
             # send the response to the client
