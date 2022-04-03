@@ -130,7 +130,7 @@ class NetClient(Thread):
             payload = Payload(KALIVE, b'', self.lobby_uuid,
                               self.player_uuid, 0)
             self.unicast(payload.to_bytes())
-            sleep(3)
+            sleep(1)
 
     def _handle_state(self):
         """
