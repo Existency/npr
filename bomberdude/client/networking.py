@@ -1,12 +1,14 @@
 from __future__ import annotations
-from common.state import Change, parse_payload
-from common.payload import KALIVE, Payload, ACCEPT, LEAVE, JOIN, REDIRECT, REJECT
+from concurrent.futures import ThreadPoolExecutor
+from common.state import Change, GameState, parse_payload
+from common.payload import ACTIONS, KALIVE, STATE, Payload, ACCEPT, LEAVE, JOIN, REDIRECT, REJECT
 from dataclasses import dataclass, field
 from logging import Logger
-from time import sleep
-from typing import Tuple, List
+from time import sleep, time
+from typing import Dict, Tuple, List
 from threading import Thread, Lock
 from socket import socket, AF_INET6, SOCK_DGRAM
+import json
 
 
 @ dataclass
@@ -20,24 +22,39 @@ class NetClient(Thread):
     """
     remote: Tuple[str, int]
     port: int
+    slock: Lock = field(init=False, default_factory=Lock)
+    gamestate: GameState = field(init=False)
     lobby_uuid: str = field(default='')
     player_uuid: str = field(default='')
     sock: ThreadedSocket = field(init=False)  # init'd when joining the server
     inbound_lock: Lock = field(default_factory=Lock)
-    queue_inbound: List[Tuple[List[Change], Tuple[str, int]]] = field(
+    queue_inbound: List[Change] = field(
         default_factory=list)
     outbound_lock: Lock = field(default_factory=Lock)
     queue_outbound: List[Tuple[Payload, Tuple[str, int]]
                          ] = field(default_factory=list)
     message_lock: Lock = field(default_factory=Lock)
-    queue_message: List[Tuple[str, Tuple[str, int]]
-                        ] = field(default_factory=list)
+    queue_message: List[Tuple[bytes,
+                              Tuple[str, int]]] = field(default_factory=list)
     logger: Logger = field(init=False)
-    # running: bool = field(init=False, default=False)
+    running: bool = field(init=False, default=False)
+    player_id: int = field(init=False, default=0)
+    started: bool = field(init=False, default=False)
 
     def __post_init__(self):
+        self.gamestate = GameState(self.slock, {})
         self.logger = Logger('NetClient')
         self.logger.info('Client init\'d')
+
+    @ property
+    def messages(self) -> list:
+        """
+        Method used to get messages tuples from the queue.
+        """
+        with self.inbound_lock:
+            message: list = self.queue_inbound
+            self.queue_inbound = []
+            return message
 
     def join_server(self, lobby_id: str):
         """
@@ -86,20 +103,7 @@ class NetClient(Thread):
 
             _try += 1
 
-    def leave(self):
-        """
-        Method used to leave the game.
-        """
-        self.logger.info('Client leaving lobby by user request.')
-        # TODO: Fix seq_num across all files
-        payload = Payload(LEAVE, b'', self.lobby_uuid, self.player_uuid, 0)
-        self.unicast(payload.to_bytes())
-
-        # terminate the threaded socket
-        self.sock.terminate()
-        self.sock.join()
-
-    # TODO: Check whether this is needed client-side
+    # TODO: This will be needed later on
     def multicast(self, data: bytes):
         """
         Method used to broadcast data using an IPv6 multicast address.
@@ -118,41 +122,80 @@ class NetClient(Thread):
         sock.sendto(data, self.remote)
         sock.close()
 
-    @ property
-    def messages(self) -> list:
+    def _kalive(self):
         """
-        Method used to get messages tuples from the queue.
+        Constantly updates the kalive.
         """
-        with self.inbound_lock:
-            message: list = self.queue_inbound
-            self.queue_inbound = []
-            return message
+        while self.running:
+            payload = Payload(KALIVE, b'', self.lobby_uuid,
+                              self.player_uuid, 0)
+            self.unicast(payload.to_bytes())
+            sleep(3)
 
-    # def close(self):
-    #    self.leave()
-    #    self.sock.terminate()
-    #    self.sock.join()
+    def _handle_state(self):
+        """
+        Method shouldn't be called directly from outside the class.
 
-    def run(self) -> None:
+        This method is used to handle the inbound queue.
+        """
+        self.started = False
+        while self.running:
+            while not self.started:
+                # Wait until server sends us a STATE message with our ID
+                time.sleep(0.1)
+
+            # reset for next game
+            self.started = False
+            self.in_game = True
+            while self.in_game:
+                _incoming_changes = []
+
+                with self.slock:
+                    _incoming_changes = self.queue_inbound
+                    self.queue_inbound = []
+
+                map(self.gamestate._apply_change, _incoming_changes)
+
+                time.sleep(0.03)
+
+    def _handle_output(self):
+        """
+        Method shouldn't be called directly from outside the class.
+
+        This method is used to handle the outbound queue.
+        """
+        while self.running:
+            actions = []
+
+            with self.outbound_lock:
+                actions = self.queue_outbound
+                self.queue_outbound = []
+
+            for action in actions:
+                self.unicast(action[0].to_bytes())
+
+            time.sleep(0.03)
+
+    def run(self):
         """
         Main loop of the networking client.
         """
-        self.running = True
-        while self.running:
-            # TODO: NDN
-            # redirect messages from the outbound queue
-            #_outbound = []
-            #
-            # with self.outbound_lock:
-            #    _outbound = self.queue_outbound
-            #    self.queue_outbound = []
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            executor.submit(self._handle_state)
+            executor.submit(self._handle_output)
+            executor.shutdown(wait=True)
 
-            # send the keepalive message to the server
-            kalive = Payload(KALIVE, b'', self.lobby_uuid, self.player_uuid, 0)
-            self.unicast(kalive.to_bytes())
-
-            # A server tick is 1/30th of a second
-            sleep(0.0333)
+    def leave(self):
+        """
+        Method used to leave the game.
+        """
+        self.logger.info('Client leaving lobby by user request.')
+        # TODO: Fix seq_num across all files
+        payload = Payload(LEAVE, b'', self.lobby_uuid, self.player_uuid, 0)
+        self.multicast(payload.to_bytes())
+        # terminate the threaded socket
+        self.sock.terminate()
+        self.sock.join()
 
     def terminate(self, reason: str = "Requested by user."):
         """
@@ -161,9 +204,9 @@ class NetClient(Thread):
         :param reason: The reason for termination.
         """
         self.logger.info('Networking client terminated: {reason}', reason)
+        self.running = False
+        self.in_game = False
         self.leave()
-        self.sock.terminate()
-        self.sock.join()
 
 
 @ dataclass
@@ -206,25 +249,19 @@ class ThreadedSocket(Thread):
                 # Parse the payload and check whether it's an event or not
                 # if it's a game event, add it to the queue_inbound
                 # if it's not, pass it to the queue_message
-                inc = parse_payload(payload)
+                if payload.type == ACTIONS:
+                    inc = parse_payload(payload)
 
-                # if it's a list of changes, add it to the queue_inbound
-                if inc is None:
-                    self.logger.info('Received invalid payload')
-                    return
+                    if inc is not None:
+                        with self.ilock:
+                            self.client.queue_inbound.extend(inc)
 
-                if isinstance(inc, list):
-                    with self.ilock:
-                        self.client.queue_inbound.append((inc, addr))
-                    return
-
-                if isinstance(inc, str):
-                    with self.mlock:
-                        self.client.queue_message.append((inc, addr))
-                    return
-
-                self.logger.warning(
-                    'Unhandled payload type. Type: %s', type(inc))
+                elif payload.type == STATE and self.client.started == False:
+                    # update the client's state and set the started flag to true
+                    state = json.loads(payload.data.decode('utf-8'))
+                    if state.uuid == self.client.player_uuid:
+                        self.client.started = True
+                        self.client.player_id = state.player_id
 
         except Exception as e:
             self.logger.warning('Invalid payload received: {e}', e)

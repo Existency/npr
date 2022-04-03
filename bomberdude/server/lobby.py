@@ -1,15 +1,19 @@
 from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from bomberdude.common.state import GameState
 from .connection import Conn
-from common.payload import ACTIONS, KALIVE, LEAVE, Payload
+from common.payload import ACTIONS, KALIVE, LEAVE, STATE, Payload
+from common.state import Change, bytes_from_changes
 from logging import Logger
 from socket import AF_INET6, socket, SOCK_DGRAM
 from threading import Thread, Lock
 import time
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+import json
 
 
+@dataclass
 class Lobby(Thread):
     """
     A Lobby is a thread that implements the basic game logic.
@@ -18,43 +22,43 @@ class Lobby(Thread):
         - Game logic
         - Handling incoming data
     """
-    # max number of players allowed in the lobby
-    capacity: int
-    # list of players currently present in the lobby
-    conns: list
-    # list of actions that are yet to be handled
-    action_queue_inbound: List[Payload]
-    # list of actions that are yet to be sent
-    action_queue_outbound: list
-    # current state of the game
-    game_state: GameState
-    # lock used to protect game state from multiple thread access
-    game_state_lock: Lock
-    # flag to indicate whether the lobby has a running game
-    in_game: bool
-    # logger used to log messages to the console
-    logger: Logger
-    # flag to indicate whether the lobby is running
-    running: bool
-    # socket used to receive data from clients
-    sock: socket
     # lobby uuid
     uuid: str
+    # socket used to receive data from clients
+    sock: socket
+    # max number of players allowed in the lobby
+    capacity: int = field(default=4)
+    # list of players currently present in the lobby
+    conns: List[Conn] = field(init=False, default_factory=list)
+    # list of actions that are yet to be handled
+    action_queue_inbound: List[Payload] = field(
+        init=False, default_factory=list)
+    # list of actions that are yet to be sent
+    action_queue_outbound: List[Change] = field(
+        init=False, default_factory=list)
+    # current state of the game
+    game_state: GameState = field(init=False)
+    # lock used to protect game state from multiple thread access
+    game_state_lock: Lock = field(init=False)
+    # flag to indicate whether the lobby has a running game
+    in_game: bool = field(init=False, default=False)
+    # logger used to log messages to the console
+    logger: Logger = field(init=False)
+    # flag to indicate whether the lobby is running
+    running: bool = field(init=False, default=False)
 
-    def __init__(self, uuid: str, sock: socket, capacity: int = 4):
-        super(Lobby, self).__init__()
-        self.capacity = capacity
-        self.conns = []
-        self.action_queue_inbound = []
-        self.action_queue_outbound = []
+    def __post_init__(self):
+        """
+        This method should not be called directly.
+
+        Method that is called after the lobby has been initialized.
+        """
         self.game_state_lock = Lock()
         self.game_state = GameState(self.game_state_lock, {})
-        self.in_game = False
+        # TODO: is this necessary
+        # super(Lobby, self).__init__()
         self.logger = Logger('Lobby')
-        self.running = False
-        self.uuid = uuid
-        self.sock = socket(AF_INET6, SOCK_DGRAM)
-        self.logger.info('Lobby init\'d')
+        self.logger.info('Lobby post init\'d')
 
     def add_player(self, conn: Conn) -> bool:
         """
@@ -249,12 +253,32 @@ class Lobby(Thread):
         Method that will run in a separate thread to handle game state changes.
         """
         while self.running:
-            # TODO: Handle game state changes
             while not self.is_full:
                 # wait until the lobby is full to start the game
                 time.sleep(0.03)
 
             self.in_game = True
+            self.game_state.reset()
+
+            __data: Dict[int, Dict[str, int | float | str]] = {}
+            start_time = time.time()
+
+            # send each conn it's player number
+            for i, c in enumerate(self.conns):
+                __data[i] = {
+                    "id": i,
+                    "time": start_time
+                }
+
+            while start_time + 5 > time.time():
+                for i, c in enumerate(self.conns):
+                    p = __data[i]
+                    __data[i]['uuid'] = c.uuid
+                    data_bytes = json.dumps(p).encode('utf-8')
+                    payload = Payload(STATE, data_bytes, self.uuid, c.uuid, 0)
+                    c.send(payload.to_bytes())
+                time.sleep(0.05)
+
             while self.in_game:
                 _incoming_changes = []
 
@@ -265,7 +289,10 @@ class Lobby(Thread):
                 # Unpack all incoming changes
                 for payload in _incoming_changes:
                     changes = payload.data
-                    self.game_state.apply_state(changes)
+
+                    updates = self.game_state.apply_state(changes)
+                    # append updates to the outgoing queue
+                    self.action_queue_outbound.extend(updates)
 
                 time.sleep(0.03)
 
@@ -277,7 +304,16 @@ class Lobby(Thread):
         The data to be sent is taken from the outbound action queue.
         """
         while self.running:
-            # get the queue of actions to be sent
+            actions = []
+            with self.game_state_lock:
+                actions = self.action_queue_outbound
+                self.action_queue_outbound = []
+
+            # convert actions to bytes
+            data = bytes_from_changes(actions)
+
+            for c in self.conns:
+                c.send(data)
 
             time.sleep(0.001)
 
@@ -309,6 +345,7 @@ class Lobby(Thread):
         """
         self.logger.info('Terminating lobby')
         self.running = False
+        self.in_game = False
 
 
 # TODO: Implement test suite
