@@ -48,7 +48,7 @@ class NetClient(Thread):
         super(NetClient, self).__init__()
         self.gamestate = GameState(self.slock, {})
         self.logger = Logger('NetClient')
-        self.logger.info('Client init\'d')
+        print('Info: Client init\'d')
 
     @ property
     def messages(self) -> list:
@@ -76,10 +76,8 @@ class NetClient(Thread):
 
         while True:
             if _try > 10:
+                print('Error: Could not join server.')
                 exit(1)
-                self.logger.error('Could not join server.')
-                raise Exception('Could not join server.')
-
             try:
                 resp, addr = sock.recvfrom(1024)
 
@@ -92,19 +90,18 @@ class NetClient(Thread):
                         self.sock = ThreadedSocket(
                             self, sock, self.inbound_lock, self.outbound_lock, self.message_lock)
                         self.sock.start()
-                        self.logger.info(
-                            'Client joined lobby %s', self.lobby_uuid)
+                        print('Info: Client joined lobby %s', self.lobby_uuid)
                         return True
 
                     elif data.type == REJECT:
-                        self.logger.error('Could not join lobby.')
+                        print('Error: Could not join lobby.')
                         return False
                     else:
-                        self.logger.warning('Server returned invalid action')
+                        print('Warning: Server returned invalid action')
                         return False
 
             except Exception as e:
-                self.logger.info('Exception: {e}', e)
+                print('Info: Exception: {e}', e)
 
             _try += 1
 
@@ -196,7 +193,7 @@ class NetClient(Thread):
         """
         Method used to leave the game.
         """
-        self.logger.info('Client leaving lobby by user request.')
+        print('Info: Client leaving lobby by user request.')
         # TODO: Fix seq_num across all files
         payload = Payload(LEAVE, b'', self.lobby_uuid, self.player_uuid, 0)
         self.unicast(payload.to_bytes())
@@ -210,7 +207,7 @@ class NetClient(Thread):
 
         :param reason: The reason for termination.
         """
-        self.logger.info('Networking client terminated: {reason}', reason)
+        print('Info: Networking client terminated: {reason}', reason)
         self.running = False
         self.in_game = False
         self.leave()
@@ -228,7 +225,7 @@ class ThreadedSocket(Thread):
 
     def __post__init__(self):
         self.logger = Logger('ThreadedSocket')
-        self.logger.info('ThreadedSocket init\'d')
+        print('Info: ThreadedSocket init\'d')
 
     def handle_data(self, data: bytes, addr: Tuple[str, int]):
         """
@@ -271,7 +268,7 @@ class ThreadedSocket(Thread):
                         self.client.player_id = state.player_id
 
         except Exception as e:
-            self.logger.warning('Invalid payload received: {e}', e)
+            print('Warning: Invalid payload received: {e}', e)
 
     def run(self):
         """
@@ -284,7 +281,7 @@ class ThreadedSocket(Thread):
 
                 Thread(target=self.handle_data, args=(data, addr)).start()
             except Exception as e:
-                self.logger.error('Error in ThSocket while recv {e}', e)
+                print('Error: Error in ThSocket while recv {e}', e)
 
         self.terminate("Unexpected condition leading to termination.")
 
@@ -294,7 +291,7 @@ class ThreadedSocket(Thread):
 
         :param reason: The reason for termination.
         """
-        self.logger.info('ThreadedSocket terminated: {reason}', reason)
+        print('Info: ThreadedSocket terminated: {reason}', reason)
         self.running = False
         self.sock.close()
 
