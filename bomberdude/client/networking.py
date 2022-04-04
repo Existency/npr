@@ -4,8 +4,8 @@ from common.state import Change, GameState, parse_payload
 from common.payload import ACTIONS, KALIVE, STATE, Payload, ACCEPT, LEAVE, JOIN, REDIRECT, REJECT
 from dataclasses import dataclass, field
 from logging import Logger
-from time import sleep, time
-from typing import Dict, Tuple, List
+import time
+from typing import Tuple, List
 from threading import Thread, Lock
 from socket import socket, AF_INET6, SOCK_DGRAM
 import json
@@ -41,7 +41,11 @@ class NetClient(Thread):
     player_id: int = field(init=False, default=0)
     started: bool = field(init=False, default=False)
 
+    def __hash__(self) -> int:
+        return super().__hash__()
+
     def __post_init__(self):
+        super(NetClient, self).__init__()
         self.gamestate = GameState(self.slock, {})
         self.logger = Logger('NetClient')
         self.logger.info('Client init\'d')
@@ -72,6 +76,7 @@ class NetClient(Thread):
 
         while True:
             if _try > 10:
+                exit(1)
                 self.logger.error('Could not join server.')
                 raise Exception('Could not join server.')
 
@@ -130,7 +135,7 @@ class NetClient(Thread):
             payload = Payload(KALIVE, b'', self.lobby_uuid,
                               self.player_uuid, 0)
             self.unicast(payload.to_bytes())
-            sleep(1)
+            time.sleep(1)
 
     def _handle_state(self):
         """
@@ -180,6 +185,8 @@ class NetClient(Thread):
         """
         Main loop of the networking client.
         """
+        self.running = True
+
         with ThreadPoolExecutor(max_workers=3) as executor:
             executor.submit(self._handle_state)
             executor.submit(self._handle_output)
@@ -192,7 +199,7 @@ class NetClient(Thread):
         self.logger.info('Client leaving lobby by user request.')
         # TODO: Fix seq_num across all files
         payload = Payload(LEAVE, b'', self.lobby_uuid, self.player_uuid, 0)
-        self.multicast(payload.to_bytes())
+        self.unicast(payload.to_bytes())
         # terminate the threaded socket
         self.sock.terminate()
         self.sock.join()

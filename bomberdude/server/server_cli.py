@@ -1,6 +1,6 @@
 from logging import Logger
 from typing import Optional
-from .server import Server
+from server.server import Server
 import argparse
 
 
@@ -12,13 +12,13 @@ class ServerCLI:
     run: bool
     logger: Logger
 
-    def __init__(self, port: int):
+    def __init__(self, port: int, level: int):
         """
         Initialize the socket server.
         """
-        self.srv = Server(port)
+        self.srv = Server(port, level)
         self.run = False
-        self.logger = Logger("Server CLI")
+        self.logger = Logger("Server CLI", level=level)
         self.logger.info("Starting CLI.")
 
     def start(self):
@@ -36,11 +36,11 @@ class ServerCLI:
                 self.logger.info("Termination requested by cli.")
                 self._terminate()
 
-            elif cmd == 'help':
-                self._help()
-
             elif cmd == 'status':
                 self._status()
+
+            else:
+                self._help()
 
         self._terminate()
 
@@ -50,7 +50,11 @@ class ServerCLI:
         This includes the number of players currently connected and the number of lobbies.
         """
         # get number of lobbies
-        num_lobbies = len(self.srv.lobbies)
+        print("Number of lobbies: %d" % len(self.srv.lobbies))
+
+        for lob in self.srv.lobbies:
+            print("Lobby: %s" % lob.uuid)
+            print("Players: %d" % len(lob.conns))
 
     def _help(self, cmd: Optional[str] = None):
         """
@@ -97,15 +101,3 @@ class ServerCLI:
         self.logger.info("Terminating CLI.")
         self.srv.terminate()
         self.srv.join()
-
-
-if __name__ == '__main__':
-    """
-    Start the bomberdude server.
-    """
-    parser = argparse.ArgumentParser(description='Bomberdude server.')
-    parser.add_argument('-p', '--port', type=int, default=8080,)
-    args = parser.parse_args()
-
-    srv = ServerCLI(args.port)
-    srv.start()

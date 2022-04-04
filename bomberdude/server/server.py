@@ -1,8 +1,7 @@
-from .connection import Conn
-from .lobby import Lobby
+from server.connection import Conn
+from server.lobby import Lobby
 from common.payload import Payload, ACCEPT, REJECT, JOIN
 from common.uuid import uuid
-from logging import Logger
 import time
 import socket
 from threading import Thread
@@ -10,22 +9,24 @@ from typing import Tuple
 
 
 class Server(Thread):
-    port: int
     running: bool
     sock: socket.socket
-    logger: Logger
     lobbies: list[Lobby]
 
-    def __init__(self, port: int):
+    def __init__(self, port: int, level: int):
         """
         Initialize the socket server.
         """
         Thread.__init__(self)
-        self.port = port
         self.running = True
         self.lobbies = []
-        self.logger = Logger("Server")
-        self.logger.info("Starting server on port %d", self.port)
+        self.sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+        self.sock.bind(('', port))
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.setblocking(False)
+        self.sock.settimeout(2)
+        print("Info: Starting server on address ",
+              self.sock.getsockname())
 
     def new_lobby(self) -> Lobby:
         """
@@ -55,8 +56,8 @@ class Server(Thread):
         # add the lobby to the list of lobbies
         self.lobbies.append(lobby)
 
-        self.logger.info("Created new lobby: %s on port %d",
-                         lobby_id, sock.getsockname()[1])
+        print("Info: Created new lobby: %s on port %d",
+              lobby_id, sock.getsockname()[1])
 
         return lobby
 
@@ -69,10 +70,10 @@ class Server(Thread):
         """
         for lobby in self.lobbies:
             if not lobby.is_full:
-                self.logger.debug("Found free lobby: %s", lobby.uuid)
+                print("Debug: Found free lobby: %s", lobby.uuid)
                 return lobby
 
-        self.logger.debug("No free lobby found. Creating new lobby.")
+        print("Debug: No free lobby found. Creating new lobby.")
         return self.new_lobby()
 
     def get_lobby(self, lobby_id: str) -> Lobby:
@@ -84,11 +85,10 @@ class Server(Thread):
         """
         for lobby in self.lobbies:
             if lobby.uuid == lobby_id and not lobby.is_full:
-                self.logger.debug("Found lobby: %s", lobby.uuid)
+                print("Debug: Found lobby: %s", lobby.uuid)
                 return lobby
 
-        self.logger.debug(
-            "No lobby found or lobby was full. Creating new lobby.")
+        print("Debug: No lobby found or lobby was full. Creating new lobby.")
         return self.new_lobby()
 
     def _deny(self, conn: Conn, reason: str):
@@ -128,7 +128,7 @@ class Server(Thread):
             inc = Payload.from_bytes(data)
 
             if inc.type != JOIN:
-                self.logger.info("Received invalid payload: %s", inc)
+                print("Info: Received invalid payload: %s", inc)
                 return
 
             # if there's a lobby uuid, get the lobby
@@ -136,7 +136,7 @@ class Server(Thread):
                 lobby = self.get_lobby(inc.lobby_uuid)
 
                 if lobby.is_full:
-                    self.logger.info("Lobby is full: %s", lobby.uuid)
+                    print("Info: Lobby is full: %s", lobby.uuid)
                     lobby = self.get_free_lobby()
 
             else:
@@ -154,30 +154,25 @@ class Server(Thread):
             self._accept(conn, lobby)
 
         except Exception as e:
-            self.logger.error("Error while parsing payload: %s", e)
+            print("Error: parsing payload: %s", e)
 
     def run(self):
         """
         Main loop of the server.
         """
-        self.sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
-        self.sock.bind(('', self.port))
-        self.sock.setblocking(False)
-        self.sock.settimeout(2)
-
         while self.running:
             try:
                 data, addr = self.sock.recvfrom(1024)
 
-                self.logger.debug("Received data from %s: %s", addr, data)
+                print("Debug: Received data from %s: %s", addr, data)
                 self.handle_data(data, addr)
 
             except socket.timeout:
-                self.logger.debug("Socket read timeout, trying again.")
+                print("Debug: Socket read timeout, trying again.")
             except BlockingIOError:
-                self.logger.debug("Socket is blocking, this should not happen")
+                print("Debug: Socket is blocking, this should not happen")
             except Exception as e:
-                self.logger.error("Error while reading from socket: %s", e)
+                print("Error: reading from socket: %s", e)
 
         self._terminate()
 
@@ -186,22 +181,22 @@ class Server(Thread):
         Terminates the server whenever the thread exits the main loop.
         """
         self.running = False
-        self.logger.info("Closing socket.")
+        print("Info: Closing socket.")
         self.sock.close()
 
-        self.logger.info("Terminating lobbies.")
+        print("Info: Terminating lobbies.")
         for lobby in self.lobbies:
             lobby.terminate()
 
-        self.logger.info("Joining threads(lobbies).")
+        print("Info: Joining threads(lobbies).")
         for lobby in self.lobbies:
             lobby.join()
 
-        self.logger.info("Terminated. Have a nice day!")
+        print("Info: Terminated. Have a nice day!")
 
     def terminate(self):
         """
         Called when another entity terminates this server.
         """
-        self.logger.info("Terminating server.")
+        print("Info: Terminating server.")
         self.running = False

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from bomberdude.common.state import GameState
+from common.state import GameState
 from .connection import Conn
 from common.payload import ACTIONS, KALIVE, LEAVE, STATE, Payload
 from common.state import Change, bytes_from_changes
