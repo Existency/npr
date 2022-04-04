@@ -105,6 +105,8 @@ class NetClient(Thread):
 
             _try += 1
 
+            time.sleep(0.3)
+
     # TODO: This will be needed later on
     def multicast(self, data: bytes):
         """
@@ -182,6 +184,8 @@ class NetClient(Thread):
         """
         Main loop of the networking client.
         """
+        self.join_server(self.lobby_uuid)
+
         self.running = True
 
         with ThreadPoolExecutor(max_workers=3) as executor:

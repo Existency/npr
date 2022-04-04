@@ -47,12 +47,16 @@ class Lobby(Thread):
     # flag to indicate whether the lobby is running
     running: bool = field(init=False, default=False)
 
+    def __hash__(self) -> int:
+        return super().__hash__()
+
     def __post_init__(self):
         """
         This method should not be called directly.
 
         Method that is called after the lobby has been initialized.
         """
+        super(Lobby, self).__init__()
         self.game_state_lock = Lock()
         self.game_state = GameState(self.game_state_lock, {})
         # TODO: is this necessary

@@ -53,6 +53,7 @@ class Server(Thread):
         lobby = Lobby(lobby_id, sock)
         lobby.start()
 
+        print("fff")
         # add the lobby to the list of lobbies
         self.lobbies.append(lobby)
 
@@ -138,7 +139,6 @@ class Server(Thread):
                 if lobby.is_full:
                     print("Info: Lobby is full: %s", lobby.uuid)
                     lobby = self.get_free_lobby()
-
             else:
                 lobby = self.get_free_lobby()
 
@@ -154,7 +154,7 @@ class Server(Thread):
             self._accept(conn, lobby)
 
         except Exception as e:
-            print("Error: parsing payload: %s", e)
+            print("Error: parsing payload: ", e)
 
     def run(self):
         """
