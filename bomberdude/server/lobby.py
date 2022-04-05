@@ -5,7 +5,7 @@ from common.state import GameState
 from .connection import Conn
 from common.payload import ACTIONS, KALIVE, LEAVE, STATE, Payload
 from common.state import Change, bytes_from_changes
-from logging import Logger
+import logging
 from socket import AF_INET6, socket, SOCK_DGRAM
 from threading import Thread, Lock
 import time
@@ -26,6 +26,8 @@ class Lobby(Thread):
     uuid: str
     # socket used to receive data from clients
     sock: socket
+    # logging level
+    level: int = field(default=logging.DEBUG)
     # max number of players allowed in the lobby
     capacity: int = field(default=4)
     # list of players currently present in the lobby
@@ -42,8 +44,6 @@ class Lobby(Thread):
     game_state_lock: Lock = field(init=False)
     # flag to indicate whether the lobby has a running game
     in_game: bool = field(init=False, default=False)
-    # logger used to log messages to the console
-    logger: Logger = field(init=False)
     # flag to indicate whether the lobby is running
     running: bool = field(init=False, default=False)
 
@@ -61,8 +61,10 @@ class Lobby(Thread):
         self.game_state = GameState(self.game_state_lock, {})
         # TODO: is this necessary
         # super(Lobby, self).__init__()
-        self.logger = Logger('Lobby')
-        self.logger.info('Lobby post init\'d')
+        logging.basicConfig(
+            level=self.level, format='%(levelname)s: %(message)s')
+
+        logging.info('Lobby post init\'d')
 
     def add_player(self, conn: Conn) -> bool:
         """
@@ -71,19 +73,19 @@ class Lobby(Thread):
         :param conn: The conn to be added.
         """
         if self.is_full:
-            self.logger.info(
-                'Lobby is fully, cannot add conn, {conn}')
+            logging.info(
+                'Lobby is fully, cannot add conn, %s', conn.__str__())
             return False
 
         # check whether the connection already exists
         for c in self.conns:
             if c.address == conn.address:
-                self.logger.info(
-                    'Connection already exists, {conn}')
+                logging.info(
+                    'Connection already exists, %s', conn.__str__())
                 return False
 
         self.conns.append(conn)
-        self.logger.info('Added conn to lobby, {conn}')
+        logging.info('Added conn to lobby, %s', conn.__str__())
         return True
 
     def get_player(self, addr: Tuple[str, int]) -> Optional[Conn]:
@@ -104,12 +106,12 @@ class Lobby(Thread):
         :param conn: The conn to be removed.
         """
         if conn not in self.conns:
-            self.logger.info(
-                'Connection not found, {conn}')
+            logging.info(
+                'Connection not found, %s', conn.__str__())
             return False
 
         self.conns.remove(conn)
-        self.logger.info('Removed conn from lobby, {conn}')
+        logging.info('Removed conn from lobby, %s', conn.__str__())
         return True
 
     @ property
@@ -201,7 +203,7 @@ class Lobby(Thread):
 
                 if conn is None:
                     # TODO: Change this later for NDN redirect support
-                    self.logger.debug('Connection not found, {conn}')
+                    logging.debug('Connection not found, %s', conn.__str__())
                     continue
 
                 # parse the data
@@ -209,35 +211,37 @@ class Lobby(Thread):
 
                 # If the payload's sequence number is equal or older than the current one, discard
                 if payload.seq_num <= conn.seq_num:
-                    self.logger.debug('Sequence number is older, {conn}')
+                    logging.debug('Sequence number is older, %s',
+                                  conn.__str__())
                     continue
 
                 # If it's an action, append it to the action queue
                 if payload.type == ACTIONS:
                     with self.game_state_lock:
                         self.action_queue_inbound.append(payload)
-                    self.logger.debug(
-                        'Appended action to action queue, {conn}')
+                    logging.debug(
+                        'Appended action to action queue, %s', conn.__str__())
 
                 elif payload.type == LEAVE:
                     try:
                         self.remove_player(conn)
-                        self.logger.debug(
-                            'Removed conn from lobby, {conn}', conn)
+                        logging.debug(
+                            'Removed conn from lobby, %s', conn.__str__())
                     except ValueError:
-                        self.logger.error(
-                            'Attempt to remove unexistent connection, {conn}', conn)
+                        logging.error(
+                            'Attempt to remove unexistent connection, %s', conn.__str__())
 
                 elif payload.type == KALIVE:
+                    logging.debug('Received KALIVE, %s', conn.__str__())
                     conn.kalive()
 
                 else:
                     # Unhandled payload type
-                    self.logger.error(
+                    logging.error(
                         'Unhandled payload type, {payload.type}', payload.type)
 
             except Exception as e:
-                self.logger.error('Error in _handle_incoming_data, {e}')
+                logging.error('Error in _handle_incoming_data, {e}')
 
     def _handle_connection_timeouts(self):
         """
@@ -321,6 +325,19 @@ class Lobby(Thread):
 
             time.sleep(0.001)
 
+    def _broadcast_kalive(self):
+        """
+        This method should not be called directly from outside the lobby.
+
+        Method running in a separate thread to broadcast kalives to all conns.
+        """
+        # every 1 second send a kalive to all conns
+        while self.running:
+            time.sleep(1)
+
+            for c in self.conns:
+                c.send(Payload(KALIVE, b'', self.uuid, c.uuid, 0).to_bytes())
+
     def run(self):
         """
         Game server main loop.
@@ -334,20 +351,21 @@ class Lobby(Thread):
         """
         self.running = True
 
-        self.logger.info('Lobby started')
+        logging.info('Lobby started')
 
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with ThreadPoolExecutor(max_workers=5) as executor:
             executor.submit(self._handle_connection_timeouts)
             executor.submit(self._handle_game_state_changes)
             executor.submit(self._handle_incoming_data)
-            # executor.submit(self._handle_outgoing)
+            executor.submit(self._handle_outgoing)
+            executor.submit(self._broadcast_kalive)
             executor.shutdown(wait=True)
 
     def terminate(self):
         """
         Terminates the lobby.
         """
-        self.logger.info('Terminating lobby')
+        logging.info('Terminating lobby')
         self.running = False
         self.in_game = False
 

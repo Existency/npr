@@ -46,4 +46,10 @@ class Conn:
         self.last_kalive = int(time.time())
         self.logger.debug('Updated last kalive time to {self.last_kalive}')
 
+    def __str__(self) -> str:
+        return f'{self.uuid} {self.name} {self.address}'
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
 # TODO: implement test suite

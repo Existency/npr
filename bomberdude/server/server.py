@@ -1,3 +1,4 @@
+import logging
 from server.connection import Conn
 from server.lobby import Lobby
 from common.payload import Payload, ACCEPT, REJECT, JOIN
@@ -25,8 +26,14 @@ class Server(Thread):
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.setblocking(False)
         self.sock.settimeout(2)
-        print("Info: Starting server on address ",
-              self.sock.getsockname())
+        # Set up logging
+        logging.basicConfig(
+            level=level, format='%(levelname)s: %(message)s')
+
+        addr = self.sock.getsockname()[0]
+        _port = self.sock.getsockname()[1]
+
+        logging.info("Starting server on address \"%s\" \"%d\"", addr, _port)
 
     def new_lobby(self) -> Lobby:
         """
@@ -53,12 +60,11 @@ class Server(Thread):
         lobby = Lobby(lobby_id, sock)
         lobby.start()
 
-        print("fff")
         # add the lobby to the list of lobbies
         self.lobbies.append(lobby)
 
-        print("Info: Created new lobby: %s on port %d",
-              lobby_id, sock.getsockname()[1])
+        logging.info("Created new lobby: %s on port %d",
+                     lobby_id, sock.getsockname()[1])
 
         return lobby
 
@@ -71,10 +77,10 @@ class Server(Thread):
         """
         for lobby in self.lobbies:
             if not lobby.is_full:
-                print("Debug: Found free lobby: %s", lobby.uuid)
+                logging.debug("Found free lobby: %s", lobby.uuid)
                 return lobby
 
-        print("Debug: No free lobby found. Creating new lobby.")
+        logging.debug("No free lobby found. Creating new lobby.")
         return self.new_lobby()
 
     def get_lobby(self, lobby_id: str) -> Lobby:
@@ -86,11 +92,12 @@ class Server(Thread):
         """
         for lobby in self.lobbies:
             if lobby.uuid == lobby_id and not lobby.is_full:
-                print("Debug: Found lobby: %s", lobby.uuid)
+                logging.debug("Found lobby: %s", lobby.uuid)
                 return lobby
 
-        print("Debug: No lobby found or lobby was full. Creating new lobby.")
-        return self.new_lobby()
+        logging.debug(
+            "No lobby found or lobby was full. Creating new lobby.")
+        return self.get_free_lobby()
 
     def _deny(self, conn: Conn, reason: str):
         """
@@ -99,9 +106,9 @@ class Server(Thread):
         :param conn: The connection to send the response to.
         :param reason: The reason why the connection was denied.
         """
-        rsp = Payload(REJECT, reason.encode('utf-8'), '', conn.uuid, 0)
+        response = Payload(REJECT, reason.encode('utf-8'), '', conn.uuid, 0)
 
-        self.sock.sendto(rsp.to_bytes(), conn.address)
+        self.sock.sendto(response.to_bytes(), conn.address)
 
     def _accept(self, conn: Conn, lobby: Lobby):
         """
@@ -111,11 +118,9 @@ class Server(Thread):
         :param lobby: The lobby the player joined.
         """
         data = lobby.port.to_bytes(2, 'big')
-        # response to be sent to client, containing the lobby port in the data field
-        rsp = Payload(
-            ACCEPT, data, lobby.uuid, conn.uuid, 0)
+        response = Payload(ACCEPT, data, lobby.uuid, conn.uuid, 0)
 
-        self.sock.sendto(rsp.to_bytes(), conn.address)
+        self.sock.sendto(response.to_bytes(), conn.address)
 
     def handle_data(self, data: bytes, addr: Tuple[str, int]):
         """
@@ -129,7 +134,7 @@ class Server(Thread):
             inc = Payload.from_bytes(data)
 
             if inc.type != JOIN:
-                print("Info: Received invalid payload: %s", inc)
+                logging.info("Received invalid payload: %s", inc)
                 return
 
             # if there's a lobby uuid, get the lobby
@@ -137,7 +142,7 @@ class Server(Thread):
                 lobby = self.get_lobby(inc.lobby_uuid)
 
                 if lobby.is_full:
-                    print("Info: Lobby is full: %s", lobby.uuid)
+                    logging.info("Lobby is full: %s", lobby.uuid)
                     lobby = self.get_free_lobby()
             else:
                 lobby = self.get_free_lobby()
@@ -154,7 +159,7 @@ class Server(Thread):
             self._accept(conn, lobby)
 
         except Exception as e:
-            print("Error: parsing payload: ", e)
+            logging.error("parsing payload: ", e)
 
     def run(self):
         """
@@ -164,15 +169,15 @@ class Server(Thread):
             try:
                 data, addr = self.sock.recvfrom(1024)
 
-                print("Debug: Received data from %s: %s", addr, data)
+                logging.debug("Received data from %s: %s", addr, data)
                 self.handle_data(data, addr)
 
             except socket.timeout:
-                print("Debug: Socket read timeout, trying again.")
+                logging.debug("Socket read timeout, trying again.")
             except BlockingIOError:
-                print("Debug: Socket is blocking, this should not happen")
+                logging.debug("Socket is blocking, this should not happen")
             except Exception as e:
-                print("Error: reading from socket: %s", e)
+                logging.error("reading from socket: %s", e)
 
         self._terminate()
 
@@ -181,22 +186,22 @@ class Server(Thread):
         Terminates the server whenever the thread exits the main loop.
         """
         self.running = False
-        print("Info: Closing socket.")
+        logging.info("Closing socket.")
         self.sock.close()
 
-        print("Info: Terminating lobbies.")
+        logging.info("Terminating lobbies.")
         for lobby in self.lobbies:
             lobby.terminate()
 
-        print("Info: Joining threads(lobbies).")
+        logging.info("Joining threads(lobbies).")
         for lobby in self.lobbies:
             lobby.join()
 
-        print("Info: Terminated. Have a nice day!")
+        logging.info("Terminated. Have a nice day!")
 
     def terminate(self):
         """
         Called when another entity terminates this server.
         """
-        print("Info: Terminating server.")
+        logging.info("Terminating server.")
         self.running = False

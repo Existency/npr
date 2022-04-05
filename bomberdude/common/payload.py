@@ -15,6 +15,34 @@ ERROR = 0xA0
 REDIRECT = 0xB0
 
 
+def int_to_type(val: int) -> str:
+    """
+    Converts an integer to a payload type.
+    """
+    if val == ACCEPT:
+        return 'ACCEPT'
+    elif val == REJECT:
+        return 'REJECT'
+    elif val == KALIVE:
+        return 'KALIVE'
+    elif val == LEAVE:
+        return 'LEAVE'
+    elif val == ACK:
+        return 'ACK'
+    elif val == JOIN:
+        return 'JOIN'
+    elif val == ACTIONS:
+        return 'ACTIONS'
+    elif val == STATE:
+        return 'STATE'
+    elif val == ERROR:
+        return 'ERROR'
+    elif val == REDIRECT:
+        return 'REDIRECT'
+    else:
+        return 'UNKNOWN'
+
+
 @dataclass
 class Payload:
     """
@@ -65,12 +93,13 @@ class Payload:
         : return: The Payload created from the byte array.
         """
         try:
+            print("data length is " + str(len(data)))
             type, length, lobby, player, seq_num = struct.unpack(
-                '!Bl4s4sl', data[:17])
-        except struct.error:
-            raise ValueError('Invalid payload')
+                '!Bl4s4sl', data)
+#        except struct.error:
+#            raise ValueError('Invalid payload')
         except Exception as e:
-            raise e
+            raise ValueError(e.__repr__())
 
         return cls(type, data[17:length+17], lobby, player, seq_num)
 
@@ -88,3 +117,9 @@ class Payload:
             self.player_uuid.encode('utf-8'),
             self.seq_num
         ) + self.data
+
+######################################################################################
+#  Acho que o que está a falhar aqui é o empacotamento dos dados.
+#
+#  Ele **devia** estar a funcionar porque uso o mesmo packaging para ambos os lados
+######################################################################################
