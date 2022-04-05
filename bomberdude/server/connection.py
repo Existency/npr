@@ -20,23 +20,31 @@ class Conn:
     """
     address: Tuple[str, int]
     name: str
-    last_kalive: int = field(default=0)
+    last_kalive: float = field(default=0)
     logger: Logger = field(init=False)
     seq_num: int = field(default_factory=int)
     uuid: str = field(init=False)
     # sock: socket = field(init=False)
+
+    @property
+    def timed_out(self) -> bool:
+        """
+        Checks whether the connection has timed out.
+
+        :return: True if the connection has timed out, False otherwise.
+        """
+        return int(time.time()) - self.last_kalive > 5
 
     def __post_init__(self):
         self.uuid = uuid()
         self.logger = Logger('Connection {self.uuid}')
         self.logger.info('Connection {self.uuid} init\'d')
 
-    def send(self, data: bytes):
+    def send(self, data: bytes, sock: socket):
         """
         Sends packet to client.
         """
         self.logger.debug('Sending packet, {data}, to client {self.uuid}')
-        sock = socket(AF_INET6, SOCK_DGRAM)
         sock.sendto(data, self.address)
 
     def kalive(self):

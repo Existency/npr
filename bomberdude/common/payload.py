@@ -92,16 +92,16 @@ class Payload:
         : param data: The byte array to create the Payload from.
         : return: The Payload created from the byte array.
         """
+        header = data[:17]
         try:
-            print("data length is " + str(len(data)))
             type, length, lobby, player, seq_num = struct.unpack(
-                '!Bl4s4sl', data)
-#        except struct.error:
-#            raise ValueError('Invalid payload')
+                '!Bl4s4sl', header)
+
+            payload = data[17:17 + length]
+            return cls(type, data[17: length+17], lobby, player, seq_num)
+
         except Exception as e:
             raise ValueError(e.__repr__())
-
-        return cls(type, data[17:length+17], lobby, player, seq_num)
 
     def to_bytes(self) -> bytes:
         """
@@ -117,9 +117,3 @@ class Payload:
             self.player_uuid.encode('utf-8'),
             self.seq_num
         ) + self.data
-
-######################################################################################
-#  Acho que o que está a falhar aqui é o empacotamento dos dados.
-#
-#  Ele **devia** estar a funcionar porque uso o mesmo packaging para ambos os lados
-######################################################################################

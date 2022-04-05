@@ -331,7 +331,8 @@ class GameState:
         if self.mode == 0:
             # Player mode
             # Doesn't do any checks, just applies the changes.
-            map(self._apply_change, changes)
+            for change in changes:
+                self._apply_change(change)
         else:
             for change in changes:
                 ctile, cur, ntile, nxt = change.unpack()

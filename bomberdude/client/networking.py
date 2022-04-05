@@ -42,6 +42,7 @@ class NetClient(Thread):
     player_id: int = field(init=False, default=0)
     started: bool = field(init=False, default=False)
     last_kalive: float = field(init=False, default=0.0)
+    lobby_port: int = field(init=False)
 
     def __hash__(self) -> int:
         return super().__hash__()
@@ -98,8 +99,14 @@ class NetClient(Thread):
                     if data.type == ACCEPT:
                         self.player_uuid = data.player_uuid
                         self.lobby_uuid = data.lobby_uuid
+                        # decode the payload's data.
+                        # It's supposed to be an int, 2 bytes, representing the port to which we must connect.
+                        self.lobby_port = int.from_bytes(
+                            data.data, byteorder='big')
+                        logging.info('New lobby port: %d', self.lobby_port)
                         self.sock = sock
                         logging.info('Client joined lobby %s', self.lobby_uuid)
+                        self.last_kalive = time.time()  # set kalive to now
                         return True
 
                     elif data.type == REJECT:
@@ -155,7 +162,6 @@ class NetClient(Thread):
 
         This method is used to handle the inbound queue.
         """
-        print("state")
         self.started = False
         while self.running:
             while not self.started:
@@ -172,7 +178,8 @@ class NetClient(Thread):
                     _incoming_changes = self.queue_inbound
                     self.queue_inbound = []
 
-                map(self.gamestate._apply_change, _incoming_changes)
+                for change in _incoming_changes:
+                    self.gamestate._apply_change(change)
 
                 time.sleep(0.03)
 
@@ -182,8 +189,11 @@ class NetClient(Thread):
 
         This method is used to broadcast the kalive to the server.
         """
-        print("kalive")
         while self.running:
+            # check whether last kalive from server was more than 5 seconds ago
+            if time.time() - self.last_kalive > 5:
+                logging.warning('Server not responding...')
+
             payload = Payload(KALIVE, b'', self.lobby_uuid,
                               self.player_uuid, 0)
 
@@ -198,7 +208,6 @@ class NetClient(Thread):
 
         This method is used to handle the outbound queue.
         """
-        print("output")
         while self.running:
             actions = []
 
@@ -218,7 +227,6 @@ class NetClient(Thread):
         Handles the data received from a remote host.
         This data is converted to a Payload object and then handled.
         """
-        print("input")
         while self.running:
             try:
                 data, addr = self.sock.recvfrom(1024)
@@ -228,23 +236,21 @@ class NetClient(Thread):
 
                 payload = Payload.from_bytes(data)
 
-                logging.warning("%s", payload.type)
-
                 if payload.type == REDIRECT:
                     with self.outbound_lock:
                         self.queue_outbound.append((payload, addr))
                     return
 
-                if payload.type == KALIVE:
-                    self.last_kalive = time.time()
-                    continue
-
                 # if the payload is for the server, handle it
-                if addr[0] == self.remote[0] and addr[1] == self.remote[1]:
+                if addr[0] == self.remote[0] and addr[1] == self.lobby_port:
                     # Parse the payload and check whether it's an event or not
                     # if it's a game event, add it to the queue_inbound
                     # if it's not, pass it to the queue_message
-                    if payload.type == ACTIONS:
+                    if payload.type == KALIVE:
+                        logging.debug('Received KALIVE.')
+                        self.last_kalive = time.time()
+
+                    elif payload.type == ACTIONS:
                         inc = parse_payload(payload)
 
                         if inc is not None:
@@ -253,8 +259,9 @@ class NetClient(Thread):
 
                     elif payload.type == STATE and self.started == False:
                         # update the client's state and set the started flag to true
+
                         state = json.loads(payload.data.decode('utf-8'))
-                        if state.uuid == self.player_uuid:
+                        if state['uuid'] == self.player_uuid:
                             self.started = True
                             self.player_id = state.player_id
             except Exception as e:

@@ -169,7 +169,7 @@ class Lobby(Thread):
         if conn not in self.conns:
             raise ValueError('Connection not found')
 
-        conn.send(data)
+        conn.send(data, self.sock)
 
     # TODO: Find out how ipv6 will affect this
     def multicast(self, data: bytes, blacklist: Optional[Conn] = None):
@@ -184,7 +184,7 @@ class Lobby(Thread):
         # send data to all conns
 
         for c in conns:
-            c.send(data)
+            c.send(data, self.sock)
 
     def _handle_incoming_data(self):
         """
@@ -250,8 +250,10 @@ class Lobby(Thread):
         Method that will run in a separate thread to handle connection timeouts.
         """
         while self.running:
-            conns = [c for c in self.conns if c.last_kalive < time.time() - 10]
-            map(self.remove_player, conns)
+            for c in self.conns:
+                if c.timed_out:
+                    self.remove_player(c)
+
             time.sleep(1)
 
     def _handle_game_state_changes(self):
@@ -284,9 +286,10 @@ class Lobby(Thread):
                     __data[i]['uuid'] = c.uuid
                     data_bytes = json.dumps(p).encode('utf-8')
                     payload = Payload(STATE, data_bytes, self.uuid, c.uuid, 0)
-                    c.send(payload.to_bytes())
+                    c.send(payload.to_bytes(), self.sock)
                 time.sleep(0.05)
 
+            logging.info('Game started on lobby %s', self.uuid)
             while self.in_game:
                 _incoming_changes = []
 
@@ -321,7 +324,7 @@ class Lobby(Thread):
             data = bytes_from_changes(actions)
 
             for c in self.conns:
-                c.send(data)
+                c.send(data, self.sock)
 
             time.sleep(0.001)
 
@@ -336,7 +339,8 @@ class Lobby(Thread):
             time.sleep(1)
 
             for c in self.conns:
-                c.send(Payload(KALIVE, b'', self.uuid, c.uuid, 0).to_bytes())
+                c.send(Payload(KALIVE, b'', self.uuid,
+                       c.uuid, 0).to_bytes(), self.sock)
 
     def run(self):
         """
