@@ -1,12 +1,13 @@
 from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from functools import singledispatchmethod
 from common.state import GameState
 from .connection import Conn
-from common.payload import ACTIONS, KALIVE, LEAVE, STATE, Payload
+from common.payload import ACTIONS, KALIVE, LEAVE, STATE, Payload, int_to_type
 from common.state import Change, bytes_from_changes
 import logging
-from socket import AF_INET6, socket, SOCK_DGRAM
+from socket import AF_INET6, socket, SOCK_DGRAM, timeout
 from threading import Thread, Lock
 import time
 from typing import Dict, List, Optional, Tuple
@@ -25,7 +26,8 @@ class Lobby(Thread):
     # lobby uuid
     uuid: str
     # socket used to receive data from clients
-    sock: socket
+    in_sock: socket
+    out_sock: socket
     # logging level
     level: int = field(default=logging.DEBUG)
     # max number of players allowed in the lobby
@@ -59,8 +61,6 @@ class Lobby(Thread):
         super(Lobby, self).__init__()
         self.game_state_lock = Lock()
         self.game_state = GameState(self.game_state_lock, {})
-        # TODO: is this necessary
-        # super(Lobby, self).__init__()
         logging.basicConfig(
             level=self.level, format='%(levelname)s: %(message)s')
 
@@ -88,6 +88,7 @@ class Lobby(Thread):
         logging.info('Added conn to lobby, %s', conn.__str__())
         return True
 
+    @singledispatchmethod
     def get_player(self, addr: Tuple[str, int]) -> Optional[Conn]:
         """
         Gets a conn from the lobby.
@@ -96,6 +97,18 @@ class Lobby(Thread):
         """
         for c in self.conns:
             if c.address == addr:
+                return c
+        return None
+
+    @get_player.register
+    def _(self, uuid: str) -> Optional[Conn]:
+        """
+        Gets a conn from the lobby.
+
+        :param addr: The uuid of the conn to be retrieved.
+        """
+        for c in self.conns:
+            if c.uuid == uuid:
                 return c
         return None
 
@@ -142,21 +155,21 @@ class Lobby(Thread):
         Returns:
             The address of the lobby.
         """
-        return self.sock.getsockname()
+        return self.in_sock.getsockname()
 
     @property
     def ip(self) -> str:
         """
         Fetches the ip address of the lobby.
         """
-        return self.sock.getsockname()[0]
+        return self.in_sock.getsockname()[0]
 
     @property
     def port(self) -> int:
         """
         Fetches the port of the lobby.
         """
-        return self.sock.getsockname()[1]
+        return self.in_sock.getsockname()[1]
 
     # TODO: Find out how ipv6 will affect this
     def unicast(self, data: bytes, conn: Conn):
@@ -169,7 +182,7 @@ class Lobby(Thread):
         if conn not in self.conns:
             raise ValueError('Connection not found')
 
-        conn.send(data, self.sock)
+        conn.send(data, self.out_sock)
 
     # TODO: Find out how ipv6 will affect this
     def multicast(self, data: bytes, blacklist: Optional[Conn] = None):
@@ -184,7 +197,7 @@ class Lobby(Thread):
         # send data to all conns
 
         for c in conns:
-            c.send(data, self.sock)
+            c.send(data, self.out_sock)
 
     def _handle_incoming_data(self):
         """
@@ -193,27 +206,27 @@ class Lobby(Thread):
         Method that will run in a separate thread to handle incoming data.
         """
         while self.running:
-            time.sleep(0.001)
 
             try:
-                data, addr = self.sock.recvfrom(1024)
+                data, _ = self.in_sock.recvfrom(1024)
 
+                # parse the data
+                payload = Payload.from_bytes(data)
+                logging.info('Received payload, %s',
+                             int_to_type(payload.type))
                 # get the conn that sent the data
-                conn = self.get_player(addr)
+                conn = self.get_player(payload.player_uuid)
 
                 if conn is None:
                     # TODO: Change this later for NDN redirect support
                     logging.debug('Connection not found, %s', conn.__str__())
                     continue
 
-                # parse the data
-                payload = Payload.from_bytes(data)
-
                 # If the payload's sequence number is equal or older than the current one, discard
-                if payload.seq_num <= conn.seq_num:
-                    logging.debug('Sequence number is older, %s',
-                                  conn.__str__())
-                    continue
+                # if payload.seq_num <= conn.seq_num:
+                #     logging.debug('Sequence number is older, %s',
+                #                   conn.__str__())
+                #     continue
 
                 # If it's an action, append it to the action queue
                 if payload.type == ACTIONS:
@@ -232,16 +245,21 @@ class Lobby(Thread):
                             'Attempt to remove unexistent connection, %s', conn.__str__())
 
                 elif payload.type == KALIVE:
-                    logging.debug('Received KALIVE, %s', conn.__str__())
+                    logging.info('Received KALIVE, %s', conn.__str__())
                     conn.kalive()
 
                 else:
                     # Unhandled payload type
                     logging.error(
-                        'Unhandled payload type, {payload.type}', payload.type)
+                        'Unhandled payload type, %d', payload.type)
+
+            except timeout:
+                logging.debug('Socket timeout on _handle_incoming_data')
 
             except Exception as e:
-                logging.error('Error in _handle_incoming_data, {e}')
+                logging.error(
+                    'Error in _handle_incoming_data, %s', e.__str__())
+            time.sleep(0.01)
 
     def _handle_connection_timeouts(self):
         """
@@ -286,7 +304,7 @@ class Lobby(Thread):
                     __data[i]['uuid'] = c.uuid
                     data_bytes = json.dumps(p).encode('utf-8')
                     payload = Payload(STATE, data_bytes, self.uuid, c.uuid, 0)
-                    c.send(payload.to_bytes(), self.sock)
+                    c.send(payload.to_bytes(), self.out_sock)
                 time.sleep(0.05)
 
             logging.info('Game started on lobby %s', self.uuid)
@@ -324,7 +342,7 @@ class Lobby(Thread):
             data = bytes_from_changes(actions)
 
             for c in self.conns:
-                c.send(data, self.sock)
+                c.send(data, self.out_sock)
 
             time.sleep(0.001)
 
@@ -337,10 +355,13 @@ class Lobby(Thread):
         # every 1 second send a kalive to all conns
         while self.running:
             time.sleep(1)
+            sent = 0
 
             for c in self.conns:
-                c.send(Payload(KALIVE, b'', self.uuid,
-                       c.uuid, 0).to_bytes(), self.sock)
+                sent += c.send(Payload(KALIVE, b'', self.uuid,
+                                       c.uuid, 0).to_bytes(), self.out_sock)
+
+            logging.debug('Sent %d bytes', sent)
 
     def run(self):
         """
@@ -357,13 +378,15 @@ class Lobby(Thread):
 
         logging.info('Lobby started')
 
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            executor.submit(self._handle_connection_timeouts)
-            executor.submit(self._handle_game_state_changes)
-            executor.submit(self._handle_incoming_data)
-            executor.submit(self._handle_outgoing)
-            executor.submit(self._broadcast_kalive)
-            executor.shutdown(wait=True)
+        # Spawn threads
+        Thread(target=self._handle_connection_timeouts).start()
+        Thread(target=self._handle_game_state_changes).start()
+        Thread(target=self._handle_incoming_data).start()
+        Thread(target=self._handle_outgoing).start()
+        Thread(target=self._broadcast_kalive).start()
+
+        while self.running:
+            time.sleep(0.1)
 
     def terminate(self):
         """

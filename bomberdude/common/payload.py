@@ -98,7 +98,7 @@ class Payload:
                 '!Bl4s4sl', header)
 
             payload = data[17:17 + length]
-            return cls(type, data[17: length+17], lobby, player, seq_num)
+            return cls(type, data[17: length+17], lobby.decode(), player.decode(), seq_num)
 
         except Exception as e:
             raise ValueError(e.__repr__())
@@ -109,11 +109,15 @@ class Payload:
 
         : return: The byte array representation of the payload.
         """
+
+        lobby_bytes = bytes(self.lobby_uuid, 'utf-8')
+        player_bytes = bytes(self.player_uuid, 'utf-8')
+
         return struct.pack(
             '!Bl4s4sl',
             self.type,
             self.length,
-            self.lobby_uuid.encode('utf-8'),
-            self.player_uuid.encode('utf-8'),
+            lobby_bytes,
+            player_bytes,
             self.seq_num
         ) + self.data

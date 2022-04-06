@@ -1,11 +1,11 @@
+from common.payload import Payload, ACCEPT, REJECT, JOIN
+from common.uuid import uuid
 import logging
 from server.connection import Conn
 from server.lobby import Lobby
-from common.payload import Payload, ACCEPT, REJECT, JOIN
-from common.uuid import uuid
-import time
 import socket
 from threading import Thread
+import time
 from typing import Tuple
 
 
@@ -53,18 +53,25 @@ class Server(Thread):
             lobby_id = uuid()
 
         # create a new socket for the lobby
-        sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
-        sock.bind(('', 0))
+        in_sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+        in_sock.bind(('', 0))
+        in_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        in_sock.settimeout(2)
+
+        out_sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+        out_sock.bind(('', 0))
+        out_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        out_sock.settimeout(2)
 
         # create a new lobby
-        lobby = Lobby(lobby_id, sock)
+        lobby = Lobby(lobby_id, in_sock, out_sock)
         lobby.start()
 
         # add the lobby to the list of lobbies
         self.lobbies.append(lobby)
 
         logging.info("Created new lobby: %s on port %d",
-                     lobby_id, sock.getsockname()[1])
+                     lobby_id, in_sock.getsockname()[1])
 
         return lobby
 
@@ -86,7 +93,6 @@ class Server(Thread):
     def get_lobby(self, lobby_id: str) -> Lobby:
         """
         Finds the lobby with the given lobby id. If no lobby is found, a new lobby is created.
-
         :param lobby_id: The id of the lobby to find.
         :return: A lobby with the given id or a new lobby if no lobby with the given id was found.
         """

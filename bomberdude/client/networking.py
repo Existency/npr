@@ -7,7 +7,7 @@ import logging
 import time
 from typing import Tuple, List
 from threading import Thread, Lock
-from socket import socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR
+from socket import socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, timeout
 import json
 
 
@@ -20,7 +20,7 @@ class NetClient(Thread):
     :param remote: The remote address to connect to.
     :param port: The port to connect to.
     """
-    remote: Tuple[str, int]
+    auth_ip: Tuple[str, int]
     port: int
     level: int = field(default=logging.INFO)
     slock: Lock = field(init=False, default_factory=Lock)
@@ -28,7 +28,8 @@ class NetClient(Thread):
     lobby_uuid: str = field(default='')
     player_uuid: str = field(default='')
     # sock: ThreadedSocket = field(init=False)  # init'd when joining the server
-    sock: socket = field(init=False)
+    in_sock: socket = field(init=False)
+    out_sock: socket = field(init=False)
     inbound_lock: Lock = field(default_factory=Lock)
     queue_inbound: List[Change] = field(
         default_factory=list)
@@ -42,7 +43,7 @@ class NetClient(Thread):
     player_id: int = field(init=False, default=0)
     started: bool = field(init=False, default=False)
     last_kalive: float = field(init=False, default=0.0)
-    lobby_port: int = field(init=False)
+    lobby_ip: Tuple[str, int] = field(init=False)
 
     def __hash__(self) -> int:
         return super().__hash__()
@@ -70,19 +71,24 @@ class NetClient(Thread):
         Joins the server, upon joining the ThreadedSocket will start listening.
         """
 
-        payload = Payload(JOIN, b'', lobby_id, '', 0)
+        in_sock = socket(AF_INET6, SOCK_DGRAM)
+        in_sock.bind(('', self.port))
+        in_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+        in_sock.settimeout(2)
 
-        sock = socket(AF_INET6, SOCK_DGRAM)
-        sock.bind(('', self.port))
-        sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-        # sock.setblocking(True)
-        sock.sendto(payload.to_bytes(), self.remote)
+        out_sock = socket(AF_INET6, SOCK_DGRAM)
+        out_sock.bind(('', self.port+1))
+        out_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+        out_sock.settimeout(2)
+
+        payload = Payload(JOIN, b'', lobby_id, '', 0)
+        in_sock.sendto(payload.to_bytes(), self.auth_ip)
 
         _try = 0
 
         while True:
             try:
-                resp, addr = sock.recvfrom(1024)
+                resp, addr = in_sock.recvfrom(1024)
 
                 if len(resp) < 17:
                     # ignore these packets
@@ -95,16 +101,18 @@ class NetClient(Thread):
                 data = Payload.from_bytes(resp)
                 # se isto continuar sem funcionar é porque struct (module) não funciona como penso
 
-                if addr[0] == self.remote[0] and addr[1] == self.remote[1]:
+                if addr[0] == self.auth_ip[0] and addr[1] == self.auth_ip[1]:
                     if data.type == ACCEPT:
                         self.player_uuid = data.player_uuid
                         self.lobby_uuid = data.lobby_uuid
                         # decode the payload's data.
                         # It's supposed to be an int, 2 bytes, representing the port to which we must connect.
-                        self.lobby_port = int.from_bytes(
+                        lobby_port = int.from_bytes(
                             data.data, byteorder='big')
-                        logging.info('New lobby port: %d', self.lobby_port)
-                        self.sock = sock
+                        logging.info('New lobby port: %d', lobby_port)
+                        self.lobby_ip = (self.auth_ip[0], lobby_port)
+                        self.in_sock = in_sock
+                        self.out_sock = out_sock
                         logging.info('Client joined lobby %s', self.lobby_uuid)
                         self.last_kalive = time.time()  # set kalive to now
                         return True
@@ -127,6 +135,21 @@ class NetClient(Thread):
 
             time.sleep(0.3)
 
+    def reset(self):
+        """
+        Resets the client to its initial state preparing it to join a new lobby.
+
+        Can be used to reset the client after a disconnection.
+        """
+        self.gamestate.reset()
+        self.lobby_uuid = ''
+        self.player_uuid = ''
+        self.lobby_ip = ('', 0)
+        self.player_id = 0
+        self.last_kalive = 0.0
+        self.running = False
+        self.started = False
+
     # TODO: This will be needed later on
     def multicast(self, data: bytes):
         """
@@ -142,19 +165,8 @@ class NetClient(Thread):
 
         :param data: The payload to be sent.
         """
-        sock = socket(AF_INET6, SOCK_DGRAM)
-        sock.sendto(data, self.remote)
-        sock.close()
-
-    def _kalive(self):
-        """
-        Constantly updates the kalive.
-        """
-        while self.running:
-            payload = Payload(KALIVE, b'', self.lobby_uuid,
-                              self.player_uuid, 0)
-            self.unicast(payload.to_bytes())
-            time.sleep(1)
+        sent = self.out_sock.sendto(data, self.lobby_ip)
+        logging.debug('Sent %d bytes to server', sent)
 
     def _handle_state(self):
         """
@@ -197,9 +209,7 @@ class NetClient(Thread):
             payload = Payload(KALIVE, b'', self.lobby_uuid,
                               self.player_uuid, 0)
 
-            # add the payload to the queue_outbound
-            with self.outbound_lock:
-                self.queue_outbound.append((payload, self.remote))
+            self.unicast(payload.to_bytes())
             time.sleep(1)
 
     def _handle_output(self):
@@ -209,6 +219,7 @@ class NetClient(Thread):
         This method is used to handle the outbound queue.
         """
         while self.running:
+
             actions = []
 
             with self.outbound_lock:
@@ -229,7 +240,7 @@ class NetClient(Thread):
         """
         while self.running:
             try:
-                data, addr = self.sock.recvfrom(1024)
+                data, addr = self.in_sock.recvfrom(1024)
 
                 if len(data) < 17:
                     continue
@@ -241,13 +252,12 @@ class NetClient(Thread):
                         self.queue_outbound.append((payload, addr))
                     return
 
-                # if the payload is for the server, handle it
-                if addr[0] == self.remote[0] and addr[1] == self.lobby_port:
+                if payload.lobby_uuid == self.lobby_uuid and payload.player_uuid == self.player_uuid:
                     # Parse the payload and check whether it's an event or not
                     # if it's a game event, add it to the queue_inbound
                     # if it's not, pass it to the queue_message
                     if payload.type == KALIVE:
-                        logging.debug('Received KALIVE.')
+                        logging.info('Received KALIVE.')
                         self.last_kalive = time.time()
 
                     elif payload.type == ACTIONS:
@@ -263,9 +273,13 @@ class NetClient(Thread):
                         state = json.loads(payload.data.decode('utf-8'))
                         if state['uuid'] == self.player_uuid:
                             self.started = True
-                            self.player_id = state.player_id
+                            self.player_id = state['player_id']
+
+            except timeout:
+                logging.info('Socket recv timed out.')
+
             except Exception as e:
-                logging.warning('Invalid payload received: %s',
+                logging.warning('Invalid payloadasdasd received: %s',
                                 e.__str__())
 
         self.terminate("Unexpected condition leading to termination.")
@@ -276,14 +290,14 @@ class NetClient(Thread):
         """
         Main loop of the networking client.
         """
-
         self.running = True
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            executor.submit(self._handle_input)
-            executor.submit(self._handle_state)
-            executor.submit(self._handle_output)
-            executor.submit(self._broadcast_kalive)
-            executor.shutdown(wait=True)
+        Thread(target=self._handle_state).start()
+        Thread(target=self._broadcast_kalive).start()
+        Thread(target=self._handle_output).start()
+        Thread(target=self._handle_input).start()
+
+        while self.running:
+            time.sleep(0.1)
 
     def leave(self):
         """
@@ -305,95 +319,5 @@ class NetClient(Thread):
         self.running = False
         self.in_game = False
         self.leave()
-
-
-@ dataclass
-class ThreadedSocket(Thread):
-    client: NetClient
-    sock: socket
-    ilock: Lock
-    olock: Lock
-    mlock: Lock
-    level: int = field(default=logging.INFO)
-    running: bool = field(init=False, default=False)
-
-    def __hash__(self) -> int:
-        return super().__hash__()
-
-    def __post__init__(self):
-        super(ThreadedSocket, self).__init__()
-        logging.basicConfig(
-            level=self.level, format='%(levelname)s: %(message)s')
-
-        logging.info('ThreadedSocket init\'d')
-
-    def handle_data(self, data: bytes, addr: Tuple[str, int]):
-        """
-        Handles the data received from a remote host.
-        This data is converted to a Payload object and then handled.
-
-        As of now this method is used only to handle data received from the server.
-
-        This method will later be used to handle the data received from other peers in the network.
-
-        :param data: The data payload to be handled.
-        :param addr: The address of the sender.
-        """
-        try:
-
-            payload = Payload.from_bytes(data)
-
-            if payload.type == REDIRECT:
-                with self.olock:
-                    self.client.queue_outbound.append((payload, addr))
-                return
-
-            # if the payload is for the server, handle it
-            if addr == self.client.remote:
-                # Parse the payload and check whether it's an event or not
-                # if it's a game event, add it to the queue_inbound
-                # if it's not, pass it to the queue_message
-                if payload.type == ACTIONS:
-                    inc = parse_payload(payload)
-
-                    if inc is not None:
-                        with self.ilock:
-                            self.client.queue_inbound.extend(inc)
-
-                elif payload.type == STATE and self.client.started == False:
-                    # update the client's state and set the started flag to true
-                    state = json.loads(payload.data.decode('utf-8'))
-                    if state.uuid == self.client.player_uuid:
-                        self.client.started = True
-                        self.client.player_id = state.player_id
-
-        except Exception as e:
-            logging.warning('Invalid payload received: {e}', e)
-
-    def run(self):
-        """
-        Main loop to communicate with the client.
-        """
-        self.running = True
-        while self.running:
-            try:
-                data, addr = self.sock.recvfrom(1024)
-
-                Thread(target=self.handle_data, args=(data, addr)).start()
-            except Exception as e:
-                logging.error('Error in ThSocket while recv {e}', e)
-
-        self.terminate("Unexpected condition leading to termination.")
-
-    def terminate(self, reason: str = "Requested by user."):
-        """
-        Terminates the client
-
-        :param reason: The reason for termination.
-        """
-        logging.info('ThreadedSocket terminated: {reason}', reason)
-        self.running = False
-        self.sock.close()
-
 
 # TODO: Implement tests for these.

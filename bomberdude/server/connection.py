@@ -24,6 +24,7 @@ class Conn:
     logger: Logger = field(init=False)
     seq_num: int = field(default_factory=int)
     uuid: str = field(init=False)
+    lobby_uuid: str = field(init=False, default='')
     # sock: socket = field(init=False)
 
     @property
@@ -45,7 +46,7 @@ class Conn:
         Sends packet to client.
         """
         self.logger.debug('Sending packet, {data}, to client {self.uuid}')
-        sock.sendto(data, self.address)
+        return sock.sendto(data, self.address)
 
     def kalive(self):
         """

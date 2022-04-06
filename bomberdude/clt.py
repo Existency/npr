@@ -14,6 +14,3 @@ if __name__ == '__main__':
     client = NetClient(('::1', 8080), args.port)
     client.join_server(args.id)
     client.start()
-
-    while True:
-        time.sleep(1)
