@@ -44,6 +44,7 @@ class NetClient(Thread):
     started: bool = field(init=False, default=False)
     last_kalive: float = field(init=False, default=0.0)
     lobby_ip: Tuple[str, int] = field(init=False)
+    seq_num: int = field(init=True, default=0)
 
     def __hash__(self) -> int:
         return super().__hash__()
@@ -81,7 +82,8 @@ class NetClient(Thread):
         out_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         out_sock.settimeout(2)
 
-        payload = Payload(JOIN, b'', lobby_id, '', 0)
+        payload = Payload(JOIN, b'', lobby_id, '', self.seq_num)
+        self.seq_num =+ 1
         in_sock.sendto(payload.to_bytes(), self.auth_ip)
 
         _try = 0
@@ -207,8 +209,8 @@ class NetClient(Thread):
                 logging.warning('Server not responding...')
 
             payload = Payload(KALIVE, b'', self.lobby_uuid,
-                              self.player_uuid, 0)
-
+                              self.player_uuid, self.seq_num)
+            self.seq_num += 1
             self.unicast(payload.to_bytes())
             time.sleep(1)
 
@@ -305,7 +307,8 @@ class NetClient(Thread):
         """
         logging.info('Client leaving lobby by user request.')
         # TODO: Fix seq_num across all files
-        payload = Payload(LEAVE, b'', self.lobby_uuid, self.player_uuid, 0)
+        payload = Payload(LEAVE, b'', self.lobby_uuid, self.player_uuid, self.seq_num)
+        self.seq_num += 1
         self.unicast(payload.to_bytes())
         # terminate the threaded socket
 
