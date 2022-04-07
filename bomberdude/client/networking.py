@@ -12,7 +12,6 @@ import json
 
 @ dataclass
 class NetClient(Thread):
-    # class NetClient:
     """
     Networking class used by the client.
 
@@ -26,7 +25,6 @@ class NetClient(Thread):
     gamestate: GameState = field(init=False)
     lobby_uuid: str = field(default='')
     player_uuid: str = field(default='')
-    # sock: ThreadedSocket = field(init=False)  # init'd when joining the server
     in_sock: socket = field(init=False)
     out_sock: socket = field(init=False)
     inbound_lock: Lock = field(default_factory=Lock)
@@ -99,22 +97,22 @@ class NetClient(Thread):
 
                 logging.info("Join: Received response on socket.")
 
-                # why the hell do you fail?!?!
                 data = Payload.from_bytes(resp)
-                # se isto continuar sem funcionar é porque struct (module) não funciona como penso
 
                 if addr[0] == self.auth_ip[0] and addr[1] == self.auth_ip[1]:
                     if data.type == ACCEPT:
                         self.player_uuid = data.player_uuid
                         self.lobby_uuid = data.lobby_uuid
                         # decode the payload's data.
-                        # It's supposed to be an int, 2 bytes, representing the port to which we must connect.
+
                         lobby_port = int.from_bytes(
                             data.data, byteorder='big')
                         logging.info('New lobby port: %d', lobby_port)
+
                         self.lobby_ip = (self.auth_ip[0], lobby_port)
                         self.in_sock = in_sock
                         self.out_sock = out_sock
+
                         logging.info('Client joined lobby %s', self.lobby_uuid)
                         self.last_kalive = time.time()  # set kalive to now
                         return True
