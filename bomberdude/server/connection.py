@@ -1,7 +1,7 @@
 from common.uuid import uuid
 from dataclasses import dataclass, field
 from logging import Logger
-from socket import socket, AF_INET6, SOCK_DGRAM
+from socket import socket
 from typing import Tuple
 import time
 
@@ -25,7 +25,6 @@ class Conn:
     seq_num: int = field(default_factory=int)
     uuid: str = field(init=False)
     lobby_uuid: str = field(init=False, default='')
-    # sock: socket = field(init=False)
 
     @property
     def timed_out(self) -> bool:

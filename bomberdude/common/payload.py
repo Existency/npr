@@ -97,7 +97,6 @@ class Payload:
             type, length, lobby, player, seq_num = struct.unpack(
                 '!Bl4s4sl', header)
 
-            payload = data[17:17 + length]
             return cls(type, data[17: length+17], lobby.decode(), player.decode(), seq_num)
 
         except Exception as e:

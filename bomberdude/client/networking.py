@@ -1,7 +1,6 @@
 from __future__ import annotations
-from concurrent.futures import ThreadPoolExecutor
 from common.state import Change, GameState, parse_payload
-from common.payload import ACTIONS, KALIVE, STATE, Payload, ACCEPT, LEAVE, JOIN, REDIRECT, REJECT, int_to_type
+from common.payload import ACTIONS, KALIVE, STATE, Payload, ACCEPT, LEAVE, JOIN, REDIRECT, REJECT
 from dataclasses import dataclass, field
 import logging
 import time
@@ -44,6 +43,7 @@ class NetClient(Thread):
     started: bool = field(init=False, default=False)
     last_kalive: float = field(init=False, default=0.0)
     lobby_ip: Tuple[str, int] = field(init=False)
+    start_time: float = field(init=False, default=0.0)
 
     def __hash__(self) -> int:
         return super().__hash__()
@@ -149,6 +149,7 @@ class NetClient(Thread):
         self.last_kalive = 0.0
         self.running = False
         self.started = False
+        self.start_time = 0.0
 
     # TODO: This will be needed later on
     def multicast(self, data: bytes):
@@ -273,13 +274,14 @@ class NetClient(Thread):
                         state = json.loads(payload.data.decode('utf-8'))
                         if state['uuid'] == self.player_uuid:
                             self.started = True
-                            self.player_id = state['player_id']
+                            self.start_time = state['time']
+                            self.player_id = state['id']
 
             except timeout:
                 logging.info('Socket recv timed out.')
 
             except Exception as e:
-                logging.warning('Invalid payloadasdasd received: %s',
+                logging.warning('Invalid payload received: %s',
                                 e.__str__())
 
         self.terminate("Unexpected condition leading to termination.")

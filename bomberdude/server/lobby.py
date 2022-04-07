@@ -1,13 +1,12 @@
 from __future__ import annotations
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
-from functools import singledispatchmethod
-from common.state import GameState
 from .connection import Conn
+from common.state import GameState
 from common.payload import ACTIONS, KALIVE, LEAVE, STATE, Payload, int_to_type
 from common.state import Change, bytes_from_changes
+from dataclasses import dataclass, field
+from functools import singledispatchmethod
 import logging
-from socket import AF_INET6, socket, SOCK_DGRAM, timeout
+from socket import socket, timeout
 from threading import Thread, Lock
 import time
 from typing import Dict, List, Optional, Tuple

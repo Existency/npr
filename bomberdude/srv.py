@@ -1,6 +1,8 @@
+#!/usr/bin/env python3
+
 import argparse
 from server.server_cli import ServerCLI
-from logging import INFO, DEBUG, ERROR
+from logging import INFO, DEBUG, ERROR, WARNING
 
 if __name__ == '__main__':
     """
@@ -8,8 +10,18 @@ if __name__ == '__main__':
     """
     parser = argparse.ArgumentParser(description='Bomberdude server.')
     parser.add_argument('-p', '--port', type=int, default=8080,)
-    parser.add_argument('-l', '--level', type=int, default=INFO,)
+    parser.add_argument('-l', '--level', type=str, default='info',)
     args = parser.parse_args()
 
-    srv = ServerCLI(args.port, args.level)
+    # parse level
+    if args.level == 'debug':
+        log_lvl = DEBUG
+    elif args.level == 'error' or args.level == 'err':
+        log_lvl = ERROR
+    elif args.level == 'warning' or args.level == 'warn':
+        log_lvl = WARNING
+    else:
+        log_lvl = INFO
+
+    srv = ServerCLI(args.port, log_lvl)
     srv.start()
