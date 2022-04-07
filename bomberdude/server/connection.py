@@ -26,6 +26,12 @@ class Conn:
     uuid: str = field(init=False)
     lobby_uuid: str = field(init=False, default='')
 
+    def __hash__(self) -> int:
+        """
+        A connection's hash is calculated using it's uuid
+        """
+        return hash(self.uuid)
+
     @property
     def timed_out(self) -> bool:
         """
