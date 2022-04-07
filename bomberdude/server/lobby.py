@@ -208,7 +208,7 @@ class Lobby(Thread):
 
             try:
                 data, _ = self.in_sock.recvfrom(1024)
-
+                
                 # parse the data
                 payload = Payload.from_bytes(data)
                 logging.info('Received payload, %s',
@@ -222,11 +222,17 @@ class Lobby(Thread):
                     continue
 
                 # If the payload's sequence number is equal or older than the current one, discard
-                # if payload.seq_num <= conn.seq_num:
-                #     logging.debug('Sequence number is older, %s',
-                #                   conn.__str__())
-                #     continue
+                print("seq",payload.seq_num)
+                print("conn",conn.seq_num)
+                
+                if payload.seq_num <= conn.seq_num:
+                    logging.debug('Sequence number is older, %s',
+                                conn.__str__())
 
+                    continue
+                
+                conn.seq_num += 1
+                
                 # If it's an action, append it to the action queue
                 if payload.type == ACTIONS:
                     with self.game_state_lock:
