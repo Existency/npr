@@ -208,7 +208,7 @@ class Lobby(Thread):
 
             try:
                 data, _ = self.in_sock.recvfrom(1024)
-                
+
                 # parse the data
                 payload = Payload.from_bytes(data)
                 logging.info('Received payload, %s',
@@ -222,17 +222,14 @@ class Lobby(Thread):
                     continue
 
                 # If the payload's sequence number is equal or older than the current one, discard
-                print("seq",payload.seq_num)
-                print("conn",conn.seq_num)
-                
+                # TODO: This is a hack fix, will require some work later on
                 if payload.seq_num <= conn.seq_num:
                     logging.debug('Sequence number is older, %s',
-                                conn.__str__())
-
+                                  conn.__str__())
                     continue
-                
+
                 conn.seq_num += 1
-                
+
                 # If it's an action, append it to the action queue
                 if payload.type == ACTIONS:
                     with self.game_state_lock:
@@ -291,25 +288,21 @@ class Lobby(Thread):
                 time.sleep(0.03)
 
             self.in_game = True
-            self.game_state.reset()
-
-            __data: Dict[int, Dict[str, int | float | str]] = {}
+            _out: Dict[Conn, Dict[str, int | float | str]] = {}
             start_time = time.time()
 
-            # send each conn it's player number
             for i, c in enumerate(self.conns):
-                __data[i] = {
-                    "id": i,
-                    "time": start_time
+                _out[c] = {
+                    'id': i,
+                    'time': start_time,
+                    'uuid': c.uuid,
                 }
 
             while start_time + 5 > time.time():
-                for i, c in enumerate(self.conns):
-                    p = __data[i]
-                    __data[i]['uuid'] = c.uuid
-                    data_bytes = json.dumps(p).encode('utf-8')
-                    payload = Payload(STATE, data_bytes, self.uuid, c.uuid, 0)
-                    c.send(payload.to_bytes(), self.out_sock)
+                for k, v in _out.items():
+                    data = json.dumps(v).encode()
+                    payload = Payload(STATE, data, self.uuid, k.uuid, 0)
+                    k.send(payload.to_bytes(), self.out_sock)
                 time.sleep(0.05)
 
             logging.info('Game started on lobby %s', self.uuid)
@@ -329,6 +322,10 @@ class Lobby(Thread):
                     self.action_queue_outbound.extend(updates)
 
                 time.sleep(0.03)
+
+            # Game over
+            logging.info('Game over on lobby %s', self.uuid)
+            self.game_state.reset()
 
     def _handle_outgoing(self):
         """
