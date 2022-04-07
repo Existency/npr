@@ -240,8 +240,6 @@ class Lobby(Thread):
                 elif payload.type == LEAVE:
                     try:
                         self.remove_player(conn)
-                        logging.debug(
-                            'Removed conn from lobby, %s', conn.__str__())
                     except ValueError:
                         logging.error(
                             'Attempt to remove unexistent connection, %s', conn.__str__())
@@ -348,8 +346,6 @@ class Lobby(Thread):
             for c in self.conns:
                 if c.timed_out:
                     self.remove_player(c)
-                    logging.info(
-                        'Removed timed out conn from lobby, %s', c.uuid)
 
             sent = 0
 
