@@ -263,19 +263,6 @@ class Lobby(Thread):
                     'Error in _handle_incoming_data, %s', e.__str__())
             time.sleep(0.01)
 
-    def _handle_connection_timeouts(self):
-        """
-        This method should not be called directly.
-
-        Method that will run in a separate thread to handle connection timeouts.
-        """
-        while self.running:
-            for c in self.conns:
-                if c.timed_out:
-                    self.remove_player(c)
-
-            time.sleep(1)
-
     def _handle_game_state_changes(self):
         """
         This method should not be called directly.
@@ -348,15 +335,22 @@ class Lobby(Thread):
 
             time.sleep(0.001)
 
-    def _broadcast_kalive(self):
+    def _kalive_and_timeout(self):
         """
         This method should not be called directly from outside the lobby.
 
-        Method running in a separate thread to broadcast kalives to all conns.
+        Method running in a separate thread to broadcast kalives to all conns and handle timeouts.
         """
         # every 1 second send a kalive to all conns
         while self.running:
             time.sleep(1)
+
+            for c in self.conns:
+                if c.timed_out:
+                    self.remove_player(c)
+                    logging.info(
+                        'Removed timed out conn from lobby, %s', c.uuid)
+
             sent = 0
 
             for c in self.conns:
@@ -381,11 +375,10 @@ class Lobby(Thread):
         logging.info('Lobby started')
 
         # Spawn threads
-        Thread(target=self._handle_connection_timeouts).start()
         Thread(target=self._handle_game_state_changes).start()
         Thread(target=self._handle_incoming_data).start()
         Thread(target=self._handle_outgoing).start()
-        Thread(target=self._broadcast_kalive).start()
+        Thread(target=self._kalive_and_timeout).start()
 
         while self.running:
             time.sleep(0.1)
