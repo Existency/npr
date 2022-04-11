@@ -2,45 +2,46 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import struct
 
-# Payload types
+
+# These serve as the list of available payload types.
+# Connection types
 ACCEPT = 0x01
 REJECT = 0x02
-KALIVE = 0x03
-LEAVE = 0x04
-ACK = 0x04
-JOIN = 0x05
-ACTIONS = 0x06
-STATE = 0x07
+JOIN = 0x03
+REJOIN = 0x04
+LEAVE = 0x05
+REDIRECT = 0x06  # redirect payload to another host, implies an extension to the header
 ERROR = 0xA0
-REDIRECT = 0xB0
+# Utility types
+KALIVE = 0xC0
+ACK = 0xC1
+# Game types
+ACTIONS = 0xD0
+STATE = 0xD1
+
+ptypes = {
+    ACCEPT: 'ACCEPT',
+    REJECT: 'REJECT',
+    JOIN: 'JOIN',
+    REJOIN: 'REJOIN',
+    LEAVE: 'LEAVE',
+    REDIRECT: 'REDIRECT',
+    ERROR: 'ERROR',
+    KALIVE: 'KALIVE',
+    ACK: 'ACK',
+    ACTIONS: 'ACTIONS',
+    STATE: 'STATE'
+}
 
 
-def int_to_type(val: int) -> str:
+def get_payload_type(val: int) -> str:
     """
-    Converts an integer to a payload type.
+    Retrieves the payload type str representation from the integer value.
+
+    :param val: The integer value to convert.
+    :return: The payload type str representation.
     """
-    if val == ACCEPT:
-        return 'ACCEPT'
-    elif val == REJECT:
-        return 'REJECT'
-    elif val == KALIVE:
-        return 'KALIVE'
-    elif val == LEAVE:
-        return 'LEAVE'
-    elif val == ACK:
-        return 'ACK'
-    elif val == JOIN:
-        return 'JOIN'
-    elif val == ACTIONS:
-        return 'ACTIONS'
-    elif val == STATE:
-        return 'STATE'
-    elif val == ERROR:
-        return 'ERROR'
-    elif val == REDIRECT:
-        return 'REDIRECT'
-    else:
-        return 'UNKNOWN'
+    return ptypes.get(val, 'UNKNOWN')
 
 
 @dataclass

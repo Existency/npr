@@ -1,6 +1,6 @@
 from __future__ import annotations
 from common.state import Change, GameState, parse_payload
-from common.payload import ACTIONS, KALIVE, STATE, Payload, ACCEPT, LEAVE, JOIN, REDIRECT, REJECT
+from common.payload import ACTIONS, KALIVE, REJOIN, STATE, Payload, ACCEPT, LEAVE, JOIN, REDIRECT, REJECT
 from dataclasses import dataclass, field
 import logging
 import time
@@ -68,6 +68,8 @@ class NetClient(Thread):
     def join_server(self, lobby_id: str):
         """
         Joins the server, upon joining the ThreadedSocket will start listening.
+
+        :param lobby_id: The lobby ID to join.
         """
 
         in_sock = socket(AF_INET6, SOCK_DGRAM)
@@ -81,10 +83,13 @@ class NetClient(Thread):
         out_sock.settimeout(2)
 
         payload = Payload(JOIN, b'', lobby_id, '', self.seq_num)
+        retry_payload = Payload(REJOIN, b'', lobby_id, '', self.seq_num)
+        retry_bytes = retry_payload.to_bytes()
         self.seq_num = + 1
         in_sock.sendto(payload.to_bytes(), self.auth_ip)
 
         _try = 0
+        _reconnect = 0
 
         while True:
             try:
@@ -129,11 +134,19 @@ class NetClient(Thread):
 
             _try += 1
 
-            if _try > 10:
-                logging.error('Could not join server.')
-                exit(1)
+            if _reconnect > 5:
+                # if unable to connect over 10 seconds, give up
+                logging.warning('Could not connect to server.')
+                return False
 
-            time.sleep(0.3)
+            # attempt to reconnect every 2 seconds
+            if _try > 8:
+                logging.warning('No response from server, reconnecting...')
+                _reconnect += 1
+                _try = 0
+                in_sock.sendto(retry_bytes, self.auth_ip)
+
+            time.sleep(0.25)
 
     def reset(self):
         """

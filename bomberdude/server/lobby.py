@@ -1,7 +1,7 @@
 from __future__ import annotations
 from .connection import Conn
 from common.state import GameState
-from common.payload import ACTIONS, KALIVE, LEAVE, STATE, Payload, int_to_type
+from common.payload import ACTIONS, KALIVE, LEAVE, STATE, Payload, get_payload_type
 from common.state import Change, bytes_from_changes
 from dataclasses import dataclass, field
 from functools import singledispatchmethod
@@ -212,7 +212,7 @@ class Lobby(Thread):
                 # parse the data
                 payload = Payload.from_bytes(data)
                 logging.info('Received payload, %s',
-                             int_to_type(payload.type))
+                             get_payload_type(payload.type))
                 # get the conn that sent the data
                 conn = self.get_player(payload.player_uuid)
 

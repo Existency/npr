@@ -1,4 +1,4 @@
-from common.payload import Payload, ACCEPT, REJECT, JOIN
+from common.payload import REJOIN, Payload, ACCEPT, REJECT, JOIN
 from common.uuid import uuid
 import logging
 from server.connection import Conn
@@ -139,7 +139,7 @@ class Server(Thread):
         try:
             inc = Payload.from_bytes(data)
 
-            if inc.type != JOIN:
+            if inc.type not in [JOIN, REJOIN]:
                 logging.info("Received invalid payload: %s", inc)
                 return
 
