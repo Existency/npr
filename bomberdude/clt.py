@@ -38,8 +38,8 @@ if __name__ == '__main__':
 
     pymenu = Client()
     pymenu.menu_loop()
-    
-    cli = NetClient((args.address, 8080), args.port,
-                    level=log_lvl, npath=node_path)
-    cli.join_server(args.id)
-    cli.start()
+
+    # cli = NetClient((args.address, 8080), args.port,
+    #                 level=log_lvl, npath=node_path)
+    # cli.join_server(args.id)
+    # cli.start()
