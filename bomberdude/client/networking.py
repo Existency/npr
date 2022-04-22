@@ -1,4 +1,5 @@
 from __future__ import annotations
+from common.gps import get_node_xy
 from common.state import Change, GameState, parse_payload
 from common.payload import ACTIONS, KALIVE, REJOIN, STATE, Payload, ACCEPT, LEAVE, JOIN, REDIRECT, REJECT
 from dataclasses import dataclass, field
@@ -20,6 +21,7 @@ class NetClient(Thread):
     """
     auth_ip: Tuple[str, int]
     port: int
+    npath: str
     level: int = field(default=logging.INFO)
     slock: Lock = field(init=False, default_factory=Lock)
     gamestate: GameState = field(init=False)
@@ -44,12 +46,16 @@ class NetClient(Thread):
     start_time: float = field(init=False, default=0.0)
     seq_num: int = field(init=True, default=0)
 
+    # gps related
+    cur_pos: Tuple[float, float] = field(init=False, default=(0.0, 0.0))
+
     def __hash__(self) -> int:
         return super().__hash__()
 
     def __post_init__(self):
         super(NetClient, self).__init__()
         self.gamestate = GameState(self.slock, {})
+        self.cur_pos = get_node_xy(self.npath)
         logging.basicConfig(
             level=self.level, format='%(levelname)s: %(message)s')
 
@@ -233,7 +239,6 @@ class NetClient(Thread):
         This method is used to handle the outbound queue.
         """
         while self.running:
-
             actions = []
 
             with self.outbound_lock:
