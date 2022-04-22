@@ -2,6 +2,7 @@
 
 import argparse
 from client.networking import NetClient
+from client.client import Client
 from common.gps import get_node_path
 from logging import INFO, DEBUG, ERROR, WARNING
 
@@ -15,7 +16,7 @@ if __name__ == '__main__':
     parser.add_argument('-a', '--address', type=str, default='::1')
     parser.add_argument('-i', '--id', type=str, default='')
     parser.add_argument('-l', '--level', type=str, default='info',)
-    parser.add_argument('-nid', '--node', type=str, required=True)
+    #parser.add_argument('-nid', '--node', type=str, required=True)
 
     args = parser.parse_args()
 
@@ -30,11 +31,14 @@ if __name__ == '__main__':
         log_lvl = INFO
 
     # get node's path
-    node_path = get_node_path(args.node)
-    if node_path is None:
-        print("Node's path not found")
-        exit(1)
+   # node_path = get_node_path(args.node)
+   # if node_path is None:
+   #     print("Node's path not found")
+   #     exit(1)
 
+    pymenu = Client()
+    pymenu.menu_loop()
+    
     cli = NetClient((args.address, 8080), args.port,
                     level=log_lvl, npath=node_path)
     cli.join_server(args.id)

@@ -1,5 +1,7 @@
 import pygame
 import pygame_menu
+from .algorithm import Algorithm
+from .game import game_init
 
 # pygame goes brr
 
@@ -17,23 +19,23 @@ class Client:
     WINDOW_SIZE = None
     surface = None
     clock = None
-    #player_alg = Algorithm.PLAYER
-    #en1_alg = Algorithm.DIJKSTRA
-    #en2_alg = Algorithm.DFS
-    #en3_alg = Algorithm.DIJKSTRA
+    player_alg = Algorithm.PLAYER
+    en1_alg = Algorithm.DIJKSTRA
+    en2_alg = Algorithm.DFS
+    en3_alg = Algorithm.DIJKSTRA
     show_path = True
 
     #def __init__(self, host, port):
     #    net = NetClient(host, port)
         
         
-    def change_player(value, c):
-        global player_alg
-        player_alg = c
+    def change_player(self,value, c):
+        #global player_alg
+        self.player_alg = c
     
     def run_game(self):
         print("run game")
-        #game.game_init( self.show_path, self.player_alg, self.en1_alg, self.en2_alg, self.en3_alg, self.TILE_SIZE)
+        game_init( self.show_path, self.player_alg, self.en1_alg, self.en2_alg, self.en3_alg, self.TILE_SIZE)
         
     def main_background(self):
         self.surface.fill(self.COLOR_BACKGROUND)
@@ -69,8 +71,8 @@ class Client:
             title='Options'
         )
         
-        #play_options.add.selector("Character 1", [("Player", self.Algorithm.PLAYER), ("DFS", self.Algorithm.DFS),
-        #                                      ("DIJKSTRA", self.Algorithm.DIJKSTRA), ("None", self.Algorithm.NONE)], onchange=self.change_player)
+        play_options.add.selector("Character 1", [("Player", Algorithm.PLAYER), ("DFS", Algorithm.DFS),
+                                              ("DIJKSTRA", Algorithm.DIJKSTRA), ("None", Algorithm.NONE)], onchange=self.change_player)
 
         play_options.add.button('Back', pygame_menu.events.BACK)
         play_menu.add.button('Start',
