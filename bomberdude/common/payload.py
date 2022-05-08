@@ -56,14 +56,24 @@ class Payload:
         length (4 Bytes): The length of the payload.
         player (4 Bytes): The player uuid.
         seq_num (4 Bytes): The sequence number of the packet.
+        ttl (1 Byte): The time to live of the packet, capped at 3.
         data (n Bytes): The data to be sent, variable length.
     """
     type: int
+    """The type of payload (action). (1 Byte)"""
     data: bytes
+    """The data to be sent, variable length. (n Bytes)"""
     length: int = field(init=False)
+    """The length of the payload. (4 Bytes)"""
     lobby_uuid: str
+    """The lobby uuid. (4 Bytes)"""
     player_uuid: str
+    """The player uuid. (4 Bytes)"""
     seq_num: int
+    """The sequence number of the packet. (4 Bytes)"""
+    ttl: int = field(default=3)
+    """The time to live of the packet, capped at 3. (1 Byte)"""
+    # TODO: Include the addresses of destination and source nodes.
 
     def __post_init__(self):
         self.length = len(self.data)

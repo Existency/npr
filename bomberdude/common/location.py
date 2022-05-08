@@ -1,6 +1,7 @@
 from os import listdir
 from os.path import isdir, join
-from typing import Optional, Tuple
+from typing import Optional
+from .types import Position
 
 
 def get_node_path(id: str) -> Optional[str]:
@@ -24,7 +25,7 @@ def get_node_path(id: str) -> Optional[str]:
     return None
 
 
-def get_node_xy(path: str) -> Tuple[float, float]:
+def get_node_xy(path: str) -> Position:
     """
     Returns the xy coordinates of a node in the /tmp/pycore.*/ directory.
 
@@ -38,3 +39,14 @@ def get_node_xy(path: str) -> Tuple[float, float]:
         coords = content.split(',')
         # return the xy coordinates
         return (float(coords[0]), float(coords[1]))
+
+
+def get_node_distance(n1: Position, n2: Position) -> float:
+    """
+    Returns the distance between two nodes.
+
+    :param n1: The xy coordinates of the first node
+    :param n2: The xy coordinates of the second node
+    :return: The distance between the two nodes
+    """
+    return ((n1[0] - n2[0]) ** 2 + (n1[1] - n2[1]) ** 2) ** 0.5

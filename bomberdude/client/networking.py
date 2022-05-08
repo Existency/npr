@@ -1,5 +1,5 @@
 from __future__ import annotations
-from common.gps import get_node_xy
+from common.location import get_node_xy
 from common.state import Change, GameState, parse_payload
 from common.payload import ACTIONS, KALIVE, REJOIN, STATE, Payload, ACCEPT, LEAVE, JOIN, REDIRECT, REJECT
 from dataclasses import dataclass, field
@@ -9,6 +9,7 @@ from typing import Tuple, List
 from threading import Thread, Lock
 from socket import socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, timeout
 import json
+from common.types import Address
 
 
 @ dataclass
@@ -19,7 +20,7 @@ class NetClient(Thread):
     :param remote: The remote address to connect to.
     :param port: The port to connect to.
     """
-    auth_ip: Tuple[str, int]
+    auth_ip: Address
     port: int
     npath: str
     level: int = field(default=logging.INFO)
@@ -33,16 +34,16 @@ class NetClient(Thread):
     queue_inbound: List[Change] = field(
         default_factory=list)
     outbound_lock: Lock = field(default_factory=Lock)
-    queue_outbound: List[Tuple[Payload, Tuple[str, int]]
+    queue_outbound: List[Tuple[Payload, Address]
                          ] = field(default_factory=list)
     message_lock: Lock = field(default_factory=Lock)
     queue_message: List[Tuple[bytes,
-                              Tuple[str, int]]] = field(default_factory=list)
+                              Address]] = field(default_factory=list)
     running: bool = field(init=False, default=False)
     player_id: int = field(init=False, default=0)
     started: bool = field(init=False, default=False)
     last_kalive: float = field(init=False, default=0.0)
-    lobby_ip: Tuple[str, int] = field(init=False)
+    lobby_ip: Address = field(init=False)
     start_time: float = field(init=False, default=0.0)
     seq_num: int = field(init=True, default=0)
 
