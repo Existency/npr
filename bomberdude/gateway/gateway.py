@@ -135,8 +135,11 @@ class EdgeNode:
         This message is used to inform mobile nodes that the edge node is still alive.
         TODO: Mobile nodes will use this message to determine the amount of jumps that have been made.
         """
-        # TODO: Figure a way to implement this.
-        pass
+        while self.running:
+            logging.info('Broadcasting KALIVE')
+            # TODO: Requires all mobiles nodes to use the same port? Check this.
+            self.out_socket.sendto(self.kalive, ('ff02::1', self.port))
+            time.sleep(1)
 
     def handle_kalive(self, addr: Address, payload: Payload) -> Payload:
         """
