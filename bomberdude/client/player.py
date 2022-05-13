@@ -15,6 +15,9 @@ class Player:
     def __init__(self):
         self.life = True
 
+    def position(self):
+        return(self.posX,self.posY)
+
     def move(self, dx, dy, grid, enemys):
         tempx = int(self.posX/4)
         tempy = int(self.posY/4)

@@ -22,7 +22,7 @@ class NetClient(Thread):
     """
     auth_ip: Address
     port: int
-    npath: str
+    #npath: str
     level: int = field(default=logging.INFO)
     slock: Lock = field(init=False, default_factory=Lock)
     gamestate: GameState = field(init=False)
@@ -56,7 +56,7 @@ class NetClient(Thread):
     def __post_init__(self):
         super(NetClient, self).__init__()
         self.gamestate = GameState(self.slock, {})
-        self.cur_pos = get_node_xy(self.npath)
+        #self.cur_pos = get_node_xy(self.npath)
         logging.basicConfig(
             level=self.level, format='%(levelname)s: %(message)s')
 
@@ -186,6 +186,7 @@ class NetClient(Thread):
 
         :param data: The payload to be sent.
         """
+        #print(self.seq_num)
         sent = self.out_sock.sendto(data, self.lobby_ip)
         logging.debug('Sent %d bytes to server', sent)
 

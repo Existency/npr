@@ -1,3 +1,4 @@
+from numpy import tile
 import pygame
 import sys
 import random
@@ -7,6 +8,9 @@ from .player import Player
 from .explosion import Explosion
 from .enemy import Enemy
 from .algorithm import Algorithm
+from common.payload import ACTIONS, KALIVE, REJOIN, STATE, Payload, ACCEPT, LEAVE, JOIN, REDIRECT, REJECT
+from common.state import Change
+from threading import Thread
 
 TILE_WIDTH = 40
 TILE_HEIGHT = 40
@@ -51,8 +55,14 @@ font = pygame.font.SysFont('Bebas', 30)
 TEXT_LOSE = font.render('GAME OVER', False, (0, 0, 0))
 TEXT_WIN = font.render('WIN', False, (0, 0, 0))
 
-
-def game_init(path, player_alg, en1_alg, en2_alg, en3_alg, scale):
+def game_init(path, player_alg, en1_alg, en2_alg, en3_alg, scale,cli,args):
+    
+    Thread(target=start_server,args=(cli,args)).start()
+    
+    while not cli.player_id:
+            #print("waiting for players")
+            print(f'player_id: {cli.player_id}')
+            time.sleep(5)
 
     global TILE_WIDTH
     global TILE_HEIGHT
@@ -84,7 +94,8 @@ def game_init(path, player_alg, en1_alg, en2_alg, en3_alg, scale):
     explosions.clear()
 
     player = Player()
-
+    
+    '''
     if en1_alg is not Algorithm.NONE:
         en1 = Enemy(11, 11, en1_alg)
         en1.load_animations('1', scale)
@@ -102,6 +113,7 @@ def game_init(path, player_alg, en1_alg, en2_alg, en3_alg, scale):
         en3.load_animations('3', scale)
         enemy_list.append(en3)
         ene_blocks.append(en3)
+    '''
 
     if player_alg is Algorithm.PLAYER:
         player.load_animations(scale)
@@ -149,7 +161,7 @@ def game_init(path, player_alg, en1_alg, en2_alg, en3_alg, scale):
     global explosion_images
     explosion_images = [explosion1_img, explosion2_img, explosion3_img]
 
-    main()
+    main(cli)
 
 
 def draw():
@@ -171,14 +183,6 @@ def draw():
         if en.life:
             s.blit(en.animation[en.direction][en.frame],
                    (en.posX * (TILE_WIDTH / 4), en.posY * (TILE_HEIGHT / 4), TILE_WIDTH, TILE_HEIGHT))
-            if show_path:
-                if en.algorithm == Algorithm.DFS:
-                    for sek in en.path:
-                        pygame.draw.rect(s, (255, 0, 0, 240), [sek[0] * TILE_WIDTH, sek[1] * TILE_HEIGHT, TILE_WIDTH, TILE_WIDTH], 1)
-                else:
-                    for sek in en.path:
-                        pygame.draw.rect(s, (255, 0, 255, 240), [sek[0] * TILE_WIDTH, sek[1] * TILE_HEIGHT, TILE_WIDTH, TILE_WIDTH], 1)
-
     pygame.display.update()
 
 
@@ -195,8 +199,30 @@ def generate_map():
 
     return
 
+def sendAction(cli,action):
+    x,y = player.position()
+    
+    move_x = x
+    move_y = y
+    tile_id = cli.player_id
+          
+    match action:
+        case 'up' : move_y += 1
+        case 'down': move_y -= 1
+        case 'left': move_x += 1
+        case 'right': move_x -= 1
+        case 'bomb': tile_id = 2
+        
 
-def main():
+    data = Change((x,y,cli.player_id),(move_x,move_y,tile_id))
+    cli.seq_num += 1
+    payload = Payload(ACTIONS, data.to_bytes(), cli.lobby_uuid,
+                    cli.player_uuid, cli.seq_num)
+    
+    cli.unicast(payload.to_bytes())
+    
+
+def main(cli):
     generate_map()
     while player.life:
         dt = clock.tick(15)
@@ -206,18 +232,22 @@ def main():
         temp = player.direction
         movement = False
         if keys[pygame.K_DOWN]:
+            sendAction(cli,'down')
             temp = 0
             player.move(0, 1, grid, ene_blocks)
             movement = True
         elif keys[pygame.K_RIGHT]:
+            sendAction(cli,'right')
             temp = 1
             player.move(1, 0, grid, ene_blocks)
             movement = True
         elif keys[pygame.K_UP]:
+            sendAction(cli,'up')
             temp = 2
             player.move(0, -1, grid, ene_blocks)
             movement = True
         elif keys[pygame.K_LEFT]:
+            sendAction(cli,'left')
             temp = 3
             player.move(-1, 0, grid, ene_blocks)
             movement = True
@@ -238,6 +268,7 @@ def main():
                 if e.key == pygame.K_SPACE:
                     if player.bomb_limit == 0:
                         continue
+                    sendAction(cli,'bomb')
                     temp_bomb = player.plant_bomb(grid)
                     bombs.append(temp_bomb)
                     grid[temp_bomb.posX][temp_bomb.posY] = 3
@@ -266,6 +297,10 @@ def update_bombs(dt):
         if e.time < 1:
             explosions.remove(e)
 
+
+def start_server(cli,args):
+    cli.join_server(args.id)
+    cli.start()
 
 def game_over():
 

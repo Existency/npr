@@ -213,6 +213,8 @@ class Lobby(Thread):
                 payload = Payload.from_bytes(data)
                 logging.info('Received payload, %s',
                              get_payload_type(payload.type))
+                
+                
                 # get the conn that sent the data
                 conn = self.get_player(payload.player_uuid)
 
@@ -220,22 +222,24 @@ class Lobby(Thread):
                     # TODO: Change this later for NDN redirect support
                     logging.debug('Connection not found, %s', conn.__str__())
                     continue
-
+                
+                
                 # If the payload's sequence number is equal or older than the current one, discard
                 # TODO: This is a hack fix, will require some work later on
                 if payload.seq_num <= conn.seq_num:
-                    logging.debug('Sequence number is older, %s',
-                                  conn.__str__())
+                    print('Sequence number is older, %s',conn.__str__())
+                    logging.debug('Sequence number is older, %s',conn.__str__())
                     continue
-
                 conn.seq_num += 1
 
+                
+                
                 # If it's an action, append it to the action queue
                 if payload.type == ACTIONS:
                     with self.game_state_lock:
                         self.action_queue_inbound.append(payload)
-                    logging.debug(
-                        'Appended action to action queue, %s', conn.__str__())
+                    print('Appended action to action queue, %s', conn.__str__())
+                    #logging.debug('Appended action to action queue, %s', conn.__str__())
 
                 elif payload.type == LEAVE:
                     try:
@@ -278,7 +282,7 @@ class Lobby(Thread):
 
             for i, c in enumerate(self.conns):
                 _out[c] = {
-                    'id': i,
+                    'id': i+1,
                     'time': start_time,
                     'uuid': c.uuid,
                 }

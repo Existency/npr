@@ -36,10 +36,10 @@ if __name__ == '__main__':
    #     print("Node's path not found")
    #     exit(1)
 
-    pymenu = Client()
-    pymenu.menu_loop()
+    pymenu = Client(args)
+    pymenu.start_game()
 
-    # cli = NetClient((args.address, 8080), args.port,
+    #cli = NetClient((args.address, 8080), args.port,
     #                 level=log_lvl, npath=node_path)
-    # cli.join_server(args.id)
-    # cli.start()
+    #cli.join_server(args.id)
+    #cli.start()

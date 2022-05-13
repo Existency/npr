@@ -1,7 +1,10 @@
 import pygame
 import pygame_menu
 from .algorithm import Algorithm
+from .networking import NetClient
 from .game import game_init
+from threading import Thread
+import time
 
 # pygame goes brr
 
@@ -25,17 +28,18 @@ class Client:
     en3_alg = Algorithm.DIJKSTRA
     show_path = True
 
-    #def __init__(self, host, port):
-    #    net = NetClient(host, port)
+    def __init__(self, args):
+        self.args = args
+        self.cli = NetClient((self.args.address, 8080), self.args.port)
         
         
     def change_player(self,value, c):
         #global player_alg
         self.player_alg = c
     
-    def run_game(self):
+    def run_game(self):  
         print("run game")
-        game_init( self.show_path, self.player_alg, self.en1_alg, self.en2_alg, self.en3_alg, self.TILE_SIZE)
+        game_init( self.show_path, self.player_alg, self.en1_alg, self.en2_alg, self.en3_alg, self.TILE_SIZE,self.cli,self.args)
         
     def main_background(self):
         self.surface.fill(self.COLOR_BACKGROUND)
@@ -135,6 +139,10 @@ class Client:
             main_menu.draw(self.surface)
 
             pygame.display.flip()
+            
+        
+    def start_game(self):
+        self.menu_loop()
 
 
     def stop(self):
