@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
+from functools import cached_property
 import struct
 
 
@@ -10,7 +11,7 @@ REJECT = 0x02
 JOIN = 0x03
 REJOIN = 0x04
 LEAVE = 0x05
-REDIRECT = 0x06  # redirect payload to another host, implies an extension to the header
+REDIRECT = 0x06  # TODO: Deprecate this functionality.
 ERROR = 0xA0
 # Utility types
 KALIVE = 0xC0
@@ -25,7 +26,7 @@ ptypes = {
     JOIN: 'JOIN',
     REJOIN: 'REJOIN',
     LEAVE: 'LEAVE',
-    REDIRECT: 'REDIRECT',
+    REDIRECT: 'REDIRECT',  # TODO: Deprecate this functionality.
     ERROR: 'ERROR',
     KALIVE: 'KALIVE',
     ACK: 'ACK',
@@ -33,22 +34,33 @@ ptypes = {
     STATE: 'STATE'
 }
 
+pattern: str = '!Bl4s4slB8H8H'
+"""
+    The pattern used to (un)pack the payload.
 
-def get_payload_type(val: int) -> str:
-    """
-    Retrieves the payload type str representation from the integer value.
+    The format is:
+    - !: Network Byte order(Big endian)
+    - B: The payload type.              (1 byte)
+    - l: The payload's length.          (4 bytes)
+    - 4s: The lobby's uuid.             (4 bytes)
+    - 4s: The player's uuid.            (4 bytes)
+    - l: The payload's seqnum.          (4 bytes)
+    - B: The payload's ttl.             (1 byte)
+    - 8H: The payload's source.         (16 bytes)
+    - 8H: The payload's destination.    (16 bytes)
+    ----------------------------------------------
+    Total:                               50 bytes
+"""
 
-    :param val: The integer value to convert.
-    :return: The payload type str representation.
-    """
-    return ptypes.get(val, 'UNKNOWN')
+OFFSET: int = 50  # 1 + 4 + 4 + 4 + 4 + 1 + 16 + 16
+"""The header's offset in bytes."""
 
 
 @dataclass
 class Payload:
     """
     Payload used to communicate between the server and the client.
-    A payload has an overhead of 17 bytes.
+    A payload has an overhead of OFFSET bytes.
 
     Attributes:
         type (1 Byte): The type of payload (action).
@@ -57,7 +69,9 @@ class Payload:
         player (4 Bytes): The player uuid.
         seq_num (4 Bytes): The sequence number of the packet.
         ttl (1 Byte): The time to live of the packet, capped at 3.
-        data (n Bytes): The data to be sent, variable length.
+        source (16 Bytes): The source of the packet.
+        destination (16 Bytes): The destination of the packet.
+        data (variable): The payload's data.
     """
     type: int
     """The type of payload (action). (1 Byte)"""
@@ -71,6 +85,10 @@ class Payload:
     """The player uuid. (4 Bytes)"""
     seq_num: int
     """The sequence number of the packet. (4 Bytes)"""
+    source: bytes
+    """The source of the payload. (16 Bytes)"""
+    destination: bytes
+    """The destination of the payload. (16 Bytes)"""
     ttl: int = field(default=3)
     """The time to live of the packet, capped at 3. (1 Byte)"""
     # TODO: Include the addresses of destination and source nodes.
@@ -84,31 +102,27 @@ class Payload:
     def __gt__(self, other: Payload) -> bool:
         return self.seq_num > other.seq_num
 
-    def __eq__(self, other) -> bool:
+    @property
+    def type_str(self) -> str:
         """
-        For two payloads to be equal they must have all the same attributes.
+        Retrieves the payload type str representation.
         """
-        return (self.type == other.type
-                and self.length == other.length
-                and self.lobby_uuid == other.lobby
-                and self.player_uuid == other.player
-                and self.seq_num == other.seq_num
-                and self.data == other.data)
+        return ptypes.get(self.type, 'UNKNOWN')
 
     @classmethod
     def from_bytes(cls, data: bytes) -> Payload:
         """
         Creates a Payload from a byte array.
 
-        : param data: The byte array to create the Payload from.
-        : return: The Payload created from the byte array.
+        :param data: The byte array to create the Payload from.
+        :return: The Payload created from the byte array.
         """
-        header = data[:17]
+        header = data[:OFFSET]
         try:
-            type, length, lobby, player, seq_num = struct.unpack(
-                '!Bl4s4sl', header)
+            type, length, lobby, player, seq_num, ttl, source, destination = struct.unpack(
+                pattern, header)
 
-            return cls(type, data[17: length+17], lobby.decode(), player.decode(), seq_num)
+            return cls(type, data[OFFSET: length+OFFSET], lobby.decode(), player.decode(), seq_num, ttl, source, destination)
 
         except Exception as e:
             raise ValueError(e.__repr__())
@@ -117,17 +131,20 @@ class Payload:
         """
         Converts the payload to a byte array.
 
-        : return: The byte array representation of the payload.
+        :return: The byte array representation of the payload.
         """
 
         lobby_bytes = bytes(self.lobby_uuid, 'utf-8')
         player_bytes = bytes(self.player_uuid, 'utf-8')
 
         return struct.pack(
-            '!Bl4s4sl',
+            pattern,
             self.type,
             self.length,
             lobby_bytes,
             player_bytes,
-            self.seq_num
+            self.seq_num,
+            self.ttl,
+            self.source,
+            self.destination
         ) + self.data

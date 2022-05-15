@@ -1,7 +1,6 @@
 from logging import Logger
 from typing import Optional
 from server.server import Server
-import argparse
 
 
 class ServerCLI:
@@ -12,11 +11,11 @@ class ServerCLI:
     run: bool
     logger: Logger
 
-    def __init__(self, port: int, level: int):
+    def __init__(self, port: int, level: int, id: str):
         """
         Initialize the socket server.
         """
-        self.srv = Server(port, level)
+        self.srv = Server(id, port, level)
         self.run = False
         self.logger = Logger("Server CLI", level=level)
         self.logger.info("Starting CLI.")
