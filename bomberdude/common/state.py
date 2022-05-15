@@ -147,7 +147,7 @@ class GameState:
     Attributes:
         state (list[list[int]]): The state of the game.
         players (dict[int, tuple[int,int]]): The players of the game, {id: (x,y)}.
-        bombs (dict[int, [float, int, int]]): The bombs of the gamem {id: (ts,x,y)}.
+        bombs (dict[int, [float, int, int]]): The bombs of the game {id: (ts,x,y)}.
         mode (int): The mode that dictates how this class should behave.
     """
     lock: Lock
@@ -163,10 +163,10 @@ class GameState:
         Resets the game state.
         """
         self.players = {
-            0: (1, 1),
-            1: (12, 1),
-            2: (1, 12),
-            3: (12, 12),
+            1: (1, 1),
+            2: (11, 1),
+            3: (1, 11),
+            4: (11, 11),
         }
         self.bombs = {}
         self.explosions = []
@@ -205,6 +205,14 @@ class GameState:
         _x, _y, _t = change.next
         self.state[y][x] = t
         self.state[_y][_x] = _t
+        
+        #print(t)
+        if 9 < t < 15:
+            #print(self.players)
+            self.players[t-9] = (_x,_y)
+        
+        if _t == 2:    
+            self.bombs[t-9] = (time.time(), _x, _y)
 
     def _is_player(self, val: int, x: int, y: int) -> Optional[int]:
         """

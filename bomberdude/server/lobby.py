@@ -2,7 +2,7 @@ from __future__ import annotations
 from .connection import Conn
 from common.state import GameState
 from common.payload import ACTIONS, KALIVE, LEAVE, STATE, Payload, get_payload_type
-from common.state import Change, bytes_from_changes
+from common.state import Change, bytes_from_changes, change_from_bytes
 from dataclasses import dataclass, field
 from functools import singledispatchmethod
 import logging
@@ -211,8 +211,8 @@ class Lobby(Thread):
 
                 # parse the data
                 payload = Payload.from_bytes(data)
-                logging.info('Received payload, %s',
-                             get_payload_type(payload.type))
+                #logging.info('Received payload, %s',
+                #             get_payload_type(payload.type))
                 
                 
                 # get the conn that sent the data
@@ -238,7 +238,7 @@ class Lobby(Thread):
                 if payload.type == ACTIONS:
                     with self.game_state_lock:
                         self.action_queue_inbound.append(payload)
-                    print('Appended action to action queue, %s', conn.__str__())
+                    #print('Appended action to action queue, %s', conn.__str__())
                     #logging.debug('Appended action to action queue, %s', conn.__str__())
 
                 elif payload.type == LEAVE:
@@ -249,7 +249,7 @@ class Lobby(Thread):
                             'Attempt to remove unexistent connection, %s', conn.__str__())
 
                 elif payload.type == KALIVE:
-                    logging.info('Received KALIVE, %s', conn.__str__())
+                    #logging.info('Received KALIVE, %s', conn.__str__())
                     conn.kalive()
 
                 else:
@@ -304,11 +304,13 @@ class Lobby(Thread):
 
                 # Unpack all incoming changes
                 for payload in _incoming_changes:
-                    changes = payload.data
-
-                    updates = self.game_state.apply_state(changes)
+                    changes = change_from_bytes(payload.data)
+                    #changes = payload.data
+                    for change in changes:
+                        self.game_state._apply_change(change)
+                    #print(changes)
                     # append updates to the outgoing queue
-                    self.action_queue_outbound.extend(updates)
+                    self.action_queue_outbound.extend(changes)
 
                 time.sleep(0.03)
 
@@ -317,23 +319,32 @@ class Lobby(Thread):
             self.game_state.reset()
 
     def _handle_outgoing(self):
+        
+        
         """
         This method should not be called directly.
 
         Method running in a separate thread to handle outgoing data.
         The data to be sent is taken from the outbound action queue.
         """
+        
         while self.running:
             actions = []
             with self.game_state_lock:
                 actions = self.action_queue_outbound
                 self.action_queue_outbound = []
+                
 
             # convert actions to bytes
             data = bytes_from_changes(actions)
-
+            
+            
             for c in self.conns:
-                c.send(data, self.out_sock)
+                payload = Payload(ACTIONS, data, self.uuid,
+                    c.uuid, 0)
+                
+                
+                c.send(payload.to_bytes(), self.out_sock)
 
             time.sleep(0.001)
 

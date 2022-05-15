@@ -39,7 +39,12 @@ class Client:
     
     def run_game(self):  
         print("run game")
+        self.TILE_SIZE = int(self.INFO.current_h * 0.025)
         game_init( self.show_path, self.player_alg, self.en1_alg, self.en2_alg, self.en3_alg, self.TILE_SIZE,self.cli,self.args)
+        
+        self.TILE_SIZE = int(self.INFO.current_h * 0.065)
+        self.WINDOW_SIZE = (13 * self.TILE_SIZE, 13 * self.TILE_SIZE)
+        
         
     def main_background(self):
         self.surface.fill(self.COLOR_BACKGROUND)

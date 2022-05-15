@@ -1,6 +1,8 @@
 from __future__ import annotations
+
+from charset_normalizer import from_bytes
 from common.location import get_node_xy
-from common.state import Change, GameState, parse_payload
+from common.state import Change, GameState, change_from_bytes, parse_payload 
 from common.payload import ACTIONS, KALIVE, REJOIN, STATE, Payload, ACCEPT, LEAVE, JOIN, REDIRECT, REJECT
 from dataclasses import dataclass, field
 import logging
@@ -201,6 +203,7 @@ class NetClient(Thread):
             while not self.started:
                 # Wait until server sends us a STATE message with our ID
                 time.sleep(0.1)
+                
 
             # reset for next game
             self.started = False
@@ -210,10 +213,13 @@ class NetClient(Thread):
 
                 with self.slock:
                     _incoming_changes = self.queue_inbound
+                    #print(f'incoming: {_incoming_changes}')
                     self.queue_inbound = []
-
+                    
                 for change in _incoming_changes:
                     self.gamestate._apply_change(change)
+                    #print('change',change)
+                    #print(self.gamestate.get_player_positions())
 
                 time.sleep(0.03)
 
@@ -267,7 +273,8 @@ class NetClient(Thread):
                     continue
 
                 payload = Payload.from_bytes(data)
-
+                
+                
                 if payload.type == REDIRECT:
                     with self.outbound_lock:
                         self.queue_outbound.append((payload, addr))
@@ -278,15 +285,18 @@ class NetClient(Thread):
                     # if it's a game event, add it to the queue_inbound
                     # if it's not, pass it to the queue_message
                     if payload.type == KALIVE:
-                        logging.info('Received KALIVE.')
+                       # logging.info('Received KALIVE.')
                         self.last_kalive = time.time()
 
                     elif payload.type == ACTIONS:
-                        inc = parse_payload(payload)
-
-                        if inc is not None:
+                        
+                        changes = change_from_bytes(payload.data)
+                        #inc = parse_payload(payload.data)
+                        
+                        if changes is not None:                               
                             with self.inbound_lock:
-                                self.queue_inbound.extend(inc)
+                                self.queue_inbound.extend(changes)
+                                
 
                     elif payload.type == STATE and self.started == False:
                         # update the client's state and set the started flag to true

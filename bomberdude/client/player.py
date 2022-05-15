@@ -4,16 +4,16 @@ import math
 from .bomb import Bomb
 
 class Player:
-    posX = 4
-    posY = 4
     direction = 0
     frame = 0
     animation = []
     range = 3
     bomb_limit = 1
 
-    def __init__(self):
+    def __init__(self,x,y):
         self.life = True
+        self.posX = x * 4
+        self.posY = y * 4
 
     def position(self):
         return(self.posX,self.posY)

@@ -15,8 +15,8 @@ from threading import Thread
 TILE_WIDTH = 40
 TILE_HEIGHT = 40
 
-WINDOW_WIDTH = 16 * TILE_WIDTH
-WINDOW_HEIGHT = 16 * TILE_HEIGHT
+WINDOW_WIDTH = 13 * TILE_WIDTH
+WINDOW_HEIGHT = 13 * TILE_HEIGHT
 
 BACKGROUND = (107, 142, 35)
 
@@ -32,7 +32,21 @@ ene_blocks = []
 bombs = []
 explosions = []
 
-grid = state
+#grid = state
+
+grid = [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
        
 
 grass_img = None
@@ -59,11 +73,13 @@ def game_init(path, player_alg, en1_alg, en2_alg, en3_alg, scale,cli,args):
     
     Thread(target=start_server,args=(cli,args)).start()
     
+    cli.gamestate.reset()
     while not cli.player_id:
-            #print("waiting for players")
-            print(f'player_id: {cli.player_id}')
-            time.sleep(5)
-
+            print("waiting for players")
+    #        print(f'player_id: {cli.player_id}')
+            time.sleep(1)
+            
+    time.sleep(3)
     global TILE_WIDTH
     global TILE_HEIGHT
     TILE_WIDTH = scale
@@ -77,7 +93,7 @@ def game_init(path, player_alg, en1_alg, en2_alg, en3_alg, scale,cli,args):
 
     global s
     s = pygame.display.set_mode((13 * TILE_WIDTH, 13 * TILE_HEIGHT))
-    pygame.display.set_caption('Bomberman')
+    pygame.display.set_caption('Bomberdude')
 
     global clock
     clock = pygame.time.Clock()
@@ -92,40 +108,164 @@ def game_init(path, player_alg, en1_alg, en2_alg, en3_alg, scale,cli,args):
     global bombs
     bombs.clear()
     explosions.clear()
-
-    player = Player()
-    
+        
     '''
     if en1_alg is not Algorithm.NONE:
-        en1 = Enemy(11, 11, en1_alg)
+        en1 = Enemy(11, 1, Algorithm.DFS,cli,2)
         en1.load_animations('1', scale)
         enemy_list.append(en1)
         ene_blocks.append(en1)
 
     if en2_alg is not Algorithm.NONE:
-        en2 = Enemy(1, 11, en2_alg)
+        en2 = Enemy(1, 11, Algorithm.DFS,cli,3)
         en2.load_animations('2', scale)
         enemy_list.append(en2)
         ene_blocks.append(en2)
 
     if en3_alg is not Algorithm.NONE:
-        en3 = Enemy(11, 1, en3_alg)
+        en3 = Enemy(11, 11, Algorithm.DFS,cli,4)
         en3.load_animations('3', scale)
         enemy_list.append(en3)
         ene_blocks.append(en3)
     '''
 
+    player_alg = Algorithm.DFS
+    if cli.player_id == 1:
+        player = Player(1,1)
+        if player_alg is Algorithm.PLAYER:
+            player.load_animations(scale)
+            ene_blocks.append(player)
+            
+            
+        elif player_alg is not Algorithm.NONE:
+            en0 = Enemy(1, 1, player_alg,cli,1)
+            en0.load_animations('', scale)
+            enemy_list.append(en0)
+            ene_blocks.append(en0)
+            player.life = False
+        else:
+            player.life = False
+            
+        en1 = Enemy(11, 1, Algorithm.REMOTE,cli,2)
+        en1.load_animations('1', scale)
+        enemy_list.append(en1)
+        ene_blocks.append(en1)
+
+        en2 = Enemy(1, 11, Algorithm.REMOTE,cli,3)
+        en2.load_animations('2', scale)
+        enemy_list.append(en2)
+        ene_blocks.append(en2)
+
+        en3 = Enemy(11, 11, Algorithm.REMOTE,cli,4)
+        en3.load_animations('3', scale)
+        enemy_list.append(en3)
+        ene_blocks.append(en3)
+            
+    elif cli.player_id == 2:
+        player = Player(11,1)
+        if player_alg is Algorithm.PLAYER:
+            player.load_animations(scale)
+            ene_blocks.append(player)
+            
+        elif player_alg is not Algorithm.NONE:
+            en0 = Enemy(11, 1, player_alg,cli,2)
+            en0.load_animations('', scale)
+            enemy_list.append(en0)
+            ene_blocks.append(en0)
+            player.life = False
+        else:
+            player.life = False
+            
+        en1 = Enemy(1, 1, Algorithm.REMOTE,cli,1)
+        en1.load_animations('1', scale)
+        enemy_list.append(en1)
+        ene_blocks.append(en1)
+
+        en2 = Enemy(1, 11, Algorithm.REMOTE,cli,3)
+        en2.load_animations('2', scale)
+        enemy_list.append(en2)
+        ene_blocks.append(en2)
+
+        en3 = Enemy(11, 11, Algorithm.REMOTE,cli,4)
+        en3.load_animations('3', scale)
+        enemy_list.append(en3)
+        ene_blocks.append(en3)
+
+    elif cli.player_id == 3:
+        player = Player(1,11)
+        if player_alg is Algorithm.PLAYER:
+            player.load_animations(scale)
+            ene_blocks.append(player)
+            
+        elif player_alg is not Algorithm.NONE:
+            en0 = Enemy(1, 11, player_alg,cli,3)
+            en0.load_animations('', scale)
+            enemy_list.append(en0)
+            ene_blocks.append(en0)
+            player.life = False
+        else:
+            player.life = False
+            
+        en1 = Enemy(11, 1, Algorithm.REMOTE,cli,2)
+        en1.load_animations('1', scale)
+        enemy_list.append(en1)
+        ene_blocks.append(en1)
+
+        en2 = Enemy(1, 1, Algorithm.REMOTE,cli,1)
+        en2.load_animations('2', scale)
+        enemy_list.append(en2)
+        ene_blocks.append(en2)
+
+        en3 = Enemy(11, 11, Algorithm.REMOTE,cli,4)
+        en3.load_animations('3', scale)
+        enemy_list.append(en3)
+        ene_blocks.append(en3)
+
+    elif cli.player_id == 4:
+        player = Player(11,11)
+        if player_alg is Algorithm.PLAYER:
+            player.load_animations(scale)
+            ene_blocks.append(player)
+            
+        elif player_alg is not Algorithm.NONE:
+            en0 = Enemy(11, 11, player_alg,cli,4)
+            en0.load_animations('', scale)
+            enemy_list.append(en0)
+            ene_blocks.append(en0)
+            player.life = False
+        else:
+            player.life = False
+            
+        en1 = Enemy(11, 1, Algorithm.REMOTE,cli,2)
+        en1.load_animations('1', scale)
+        enemy_list.append(en1)
+        ene_blocks.append(en1)
+
+        en2 = Enemy(1, 11, Algorithm.REMOTE,cli,3)
+        en2.load_animations('2', scale)
+        enemy_list.append(en2)
+        ene_blocks.append(en2)
+
+        en3 = Enemy(1, 1, Algorithm.REMOTE,cli,1)
+        en3.load_animations('3', scale)
+        enemy_list.append(en3)
+        ene_blocks.append(en3)
+    '''
+    player_alg = Algorithm.DFS
+    player = Player(1,1)
     if player_alg is Algorithm.PLAYER:
         player.load_animations(scale)
         ene_blocks.append(player)
     elif player_alg is not Algorithm.NONE:
-        en0 = Enemy(1, 1, player_alg)
+        en0 = Enemy(1, 1, player_alg,cli,1)
         en0.load_animations('', scale)
+        player.load_animations(scale)
         enemy_list.append(en0)
         ene_blocks.append(en0)
         player.life = False
     else:
         player.life = False
+    '''
 
     global grass_img
     grass_img = pygame.image.load('images/terrain/grass.png')
@@ -194,27 +334,21 @@ def generate_map():
                 continue
             elif (i < 3 or i > len(grid) - 4) and (j < 3 or j > len(grid[i]) - 4):
                 continue
-            if random.randint(0, 9) < 7:
+            if random.randint(8, 9) < 7:
                 grid[i][j] = 2
 
     return
 
-def sendAction(cli,action):
-    x,y = player.position()
+def sendAction(cli,action,x,y):
+    move_x,move_y = player.position()
     
-    move_x = x
-    move_y = y
-    tile_id = cli.player_id
-          
+    tile_id = None      
     match action:
-        case 'up' : move_y += 1
-        case 'down': move_y -= 1
-        case 'left': move_x += 1
-        case 'right': move_x -= 1
-        case 'bomb': tile_id = 2
-        
-
-    data = Change((x,y,cli.player_id),(move_x,move_y,tile_id))
+        case 'move' : tile_id = cli.player_id + 9
+        case 'bomb': tile_id = 2 
+    
+      
+    data = Change((int(x/4),int(y/4),cli.player_id+9),(int(move_x/4),int(move_y/4),tile_id))
     cli.seq_num += 1
     payload = Payload(ACTIONS, data.to_bytes(), cli.lobby_uuid,
                     cli.player_uuid, cli.seq_num)
@@ -232,25 +366,30 @@ def main(cli):
         temp = player.direction
         movement = False
         if keys[pygame.K_DOWN]:
-            sendAction(cli,'down')
+            x,y = player.position()
             temp = 0
             player.move(0, 1, grid, ene_blocks)
+            sendAction(cli,'move',x,y)
             movement = True
         elif keys[pygame.K_RIGHT]:
-            sendAction(cli,'right')
+            x,y = player.position()
             temp = 1
             player.move(1, 0, grid, ene_blocks)
+            sendAction(cli,'move',x,y)
             movement = True
         elif keys[pygame.K_UP]:
-            sendAction(cli,'up')
+            x,y = player.position()
             temp = 2
             player.move(0, -1, grid, ene_blocks)
+            sendAction(cli,'move',x,y)
             movement = True
         elif keys[pygame.K_LEFT]:
-            sendAction(cli,'left')
+            x,y = player.position()
             temp = 3
             player.move(-1, 0, grid, ene_blocks)
+            sendAction(cli,'move',x,y)
             movement = True
+            
         if temp != player.direction:
             player.frame = 0
             player.direction = temp
@@ -268,11 +407,13 @@ def main(cli):
                 if e.key == pygame.K_SPACE:
                     if player.bomb_limit == 0:
                         continue
-                    sendAction(cli,'bomb')
+                    x,y = player.position()
+                    sendAction(cli,'bomb',x,y)
                     temp_bomb = player.plant_bomb(grid)
                     bombs.append(temp_bomb)
                     grid[temp_bomb.posX][temp_bomb.posY] = 3
                     player.bomb_limit -= 1
+                    
 
         update_bombs(dt)
     game_over()
@@ -303,7 +444,6 @@ def start_server(cli,args):
     cli.start()
 
 def game_over():
-
     while True:
         dt = clock.tick(15)
         update_bombs(dt)
