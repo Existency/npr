@@ -57,7 +57,7 @@ class NetClient(Thread):
 
     def __post_init__(self):
         super(NetClient, self).__init__()
-        self.gamestate = GameState(self.slock, {})
+        self.gamestate = GameState(self.slock, {}, {})
         #self.cur_pos = get_node_xy(self.npath)
         logging.basicConfig(
             level=self.level, format='%(levelname)s: %(message)s')
@@ -306,6 +306,8 @@ class NetClient(Thread):
                             self.started = True
                             self.start_time = state['time']
                             self.player_id = state['id']
+                            #print('dealing with boxes',state['boxes'])
+                            self.gamestate.boxes = state['boxes']
 
             except timeout:
                 logging.info('Socket recv timed out.')

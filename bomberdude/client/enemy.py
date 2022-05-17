@@ -132,9 +132,17 @@ class Enemy:
         bomb = None
         
         with self.lock:
-            new_x, new_y = self.cli.gamestate.get_player_positions()[self.id]
+            #print(self.cli.gamestate.players)
+            
+            if self.id not in self.cli.gamestate.players:
+                self.life = False
+            #    print('it works maybe? ',self.id,' died')
+                return
+            
             if self.id in self.cli.gamestate.bombs:
-                bomb = self.cli.gamestate.bombs[self.id]   
+                bomb = self.cli.gamestate.bombs[self.id] 
+            
+            new_x, new_y = self.cli.gamestate.get_player_positions()[self.id]  
          
         
         dx = None
@@ -213,14 +221,16 @@ class Enemy:
         return b
 
     def check_death(self, exp):
-
+        
         for e in exp:
             for s in e.sectors:
                 if int(self.posX / 4) == s[0] and int(self.posY / 4) == s[1]:
                     if e.bomber == self:
                         print(str(self.algorithm.value) + " Self Wrecked")
                     self.life = False
-                    return
+                    return False
+        return True
+        
 
     def dfs(self, grid):
 

@@ -79,7 +79,6 @@ def game_init(path, player_alg, en1_alg, en2_alg, en3_alg, scale,cli,args):
     #        print(f'player_id: {cli.player_id}')
             time.sleep(1)
             
-    time.sleep(3)
     global TILE_WIDTH
     global TILE_HEIGHT
     TILE_WIDTH = scale
@@ -100,10 +99,12 @@ def game_init(path, player_alg, en1_alg, en2_alg, en3_alg, scale,cli,args):
 
     global enemy_list
     global ene_blocks
+    global boxes
     global player
 
     enemy_list = []
     ene_blocks = []
+    boxes = {}
     global explosions
     global bombs
     bombs.clear()
@@ -128,12 +129,14 @@ def game_init(path, player_alg, en1_alg, en2_alg, en3_alg, scale,cli,args):
         enemy_list.append(en3)
         ene_blocks.append(en3)
     '''
+    global en0
 
     player_alg = Algorithm.DFS
+    
     if cli.player_id == 1:
         player = Player(1,1)
         if player_alg is Algorithm.PLAYER:
-            player.load_animations(scale)
+            player.load_animations('', scale)
             ene_blocks.append(player)
             
             
@@ -147,12 +150,12 @@ def game_init(path, player_alg, en1_alg, en2_alg, en3_alg, scale,cli,args):
             player.life = False
             
         en1 = Enemy(11, 1, Algorithm.REMOTE,cli,2)
-        en1.load_animations('1', scale)
+        en1.load_animations('2', scale)
         enemy_list.append(en1)
         ene_blocks.append(en1)
 
         en2 = Enemy(1, 11, Algorithm.REMOTE,cli,3)
-        en2.load_animations('2', scale)
+        en2.load_animations('1', scale)
         enemy_list.append(en2)
         ene_blocks.append(en2)
 
@@ -164,12 +167,12 @@ def game_init(path, player_alg, en1_alg, en2_alg, en3_alg, scale,cli,args):
     elif cli.player_id == 2:
         player = Player(11,1)
         if player_alg is Algorithm.PLAYER:
-            player.load_animations(scale)
+            player.load_animations('2', scale)
             ene_blocks.append(player)
             
         elif player_alg is not Algorithm.NONE:
             en0 = Enemy(11, 1, player_alg,cli,2)
-            en0.load_animations('', scale)
+            en0.load_animations('2', scale)
             enemy_list.append(en0)
             ene_blocks.append(en0)
             player.life = False
@@ -177,12 +180,12 @@ def game_init(path, player_alg, en1_alg, en2_alg, en3_alg, scale,cli,args):
             player.life = False
             
         en1 = Enemy(1, 1, Algorithm.REMOTE,cli,1)
-        en1.load_animations('1', scale)
+        en1.load_animations('', scale)
         enemy_list.append(en1)
         ene_blocks.append(en1)
 
         en2 = Enemy(1, 11, Algorithm.REMOTE,cli,3)
-        en2.load_animations('2', scale)
+        en2.load_animations('1', scale)
         enemy_list.append(en2)
         ene_blocks.append(en2)
 
@@ -194,12 +197,12 @@ def game_init(path, player_alg, en1_alg, en2_alg, en3_alg, scale,cli,args):
     elif cli.player_id == 3:
         player = Player(1,11)
         if player_alg is Algorithm.PLAYER:
-            player.load_animations(scale)
+            player.load_animations('1', scale)
             ene_blocks.append(player)
             
         elif player_alg is not Algorithm.NONE:
             en0 = Enemy(1, 11, player_alg,cli,3)
-            en0.load_animations('', scale)
+            en0.load_animations('1', scale)
             enemy_list.append(en0)
             ene_blocks.append(en0)
             player.life = False
@@ -207,12 +210,12 @@ def game_init(path, player_alg, en1_alg, en2_alg, en3_alg, scale,cli,args):
             player.life = False
             
         en1 = Enemy(11, 1, Algorithm.REMOTE,cli,2)
-        en1.load_animations('1', scale)
+        en1.load_animations('2', scale)
         enemy_list.append(en1)
         ene_blocks.append(en1)
 
         en2 = Enemy(1, 1, Algorithm.REMOTE,cli,1)
-        en2.load_animations('2', scale)
+        en2.load_animations('', scale)
         enemy_list.append(en2)
         ene_blocks.append(en2)
 
@@ -224,12 +227,12 @@ def game_init(path, player_alg, en1_alg, en2_alg, en3_alg, scale,cli,args):
     elif cli.player_id == 4:
         player = Player(11,11)
         if player_alg is Algorithm.PLAYER:
-            player.load_animations(scale)
+            player.load_animations('3', scale)
             ene_blocks.append(player)
             
         elif player_alg is not Algorithm.NONE:
             en0 = Enemy(11, 11, player_alg,cli,4)
-            en0.load_animations('', scale)
+            en0.load_animations('3', scale)
             enemy_list.append(en0)
             ene_blocks.append(en0)
             player.life = False
@@ -237,17 +240,17 @@ def game_init(path, player_alg, en1_alg, en2_alg, en3_alg, scale,cli,args):
             player.life = False
             
         en1 = Enemy(11, 1, Algorithm.REMOTE,cli,2)
-        en1.load_animations('1', scale)
+        en1.load_animations('2', scale)
         enemy_list.append(en1)
         ene_blocks.append(en1)
 
         en2 = Enemy(1, 11, Algorithm.REMOTE,cli,3)
-        en2.load_animations('2', scale)
+        en2.load_animations('1', scale)
         enemy_list.append(en2)
         ene_blocks.append(en2)
 
         en3 = Enemy(1, 1, Algorithm.REMOTE,cli,1)
-        en3.load_animations('3', scale)
+        en3.load_animations('', scale)
         enemy_list.append(en3)
         ene_blocks.append(en3)
     '''
@@ -326,29 +329,32 @@ def draw():
     pygame.display.update()
 
 
-def generate_map():
-
-    for i in range(1, len(grid) - 1):
-        for j in range(1, len(grid[i]) - 1):
-            if grid[i][j] != 0:
-                continue
-            elif (i < 3 or i > len(grid) - 4) and (j < 3 or j > len(grid[i]) - 4):
-                continue
-            if random.randint(8, 9) < 7:
-                grid[i][j] = 2
-
+def generate_map(cli):
+    if not cli.gamestate.boxes:
+        time.sleep(0.1)
+    
+    boxes.update(cli.gamestate.boxes)
+    
+    
+    for box in cli.gamestate.boxes.items():
+        grid[box[1][0]][box[1][1]] = 2
     return
 
 def sendAction(cli,action,x,y):
+    if action == '':
+        return
+    
     move_x,move_y = player.position()
     
     tile_id = None      
     match action:
         case 'move' : tile_id = cli.player_id + 9
         case 'bomb': tile_id = 2 
+        case 'death': tile_id = cli.player_id + 109
+        case _: return
     
-      
     data = Change((int(x/4),int(y/4),cli.player_id+9),(int(move_x/4),int(move_y/4),tile_id))
+    print('sent action',data)
     cli.seq_num += 1
     payload = Payload(ACTIONS, data.to_bytes(), cli.lobby_uuid,
                     cli.player_uuid, cli.seq_num)
@@ -357,7 +363,7 @@ def sendAction(cli,action,x,y):
     
 
 def main(cli):
-    generate_map()
+    generate_map(cli)
     while player.life:
         dt = clock.tick(15)
         for en in enemy_list:
@@ -415,24 +421,50 @@ def main(cli):
                     player.bomb_limit -= 1
                     
 
-        update_bombs(dt)
-    game_over()
+        update_bombs(cli,dt)
+    game_over(cli)
 
+def sync_boxes(cli):
+    state_boxes = cli.gamestate.boxes.keys()
+    client_boxes = boxes.keys()
+    
+    diff = client_boxes - state_boxes
+    
+    for i in diff:
+        x,y = boxes[i]
+        boxes.pop(i)
+        grid[x][y] = 0
+    
 
-def update_bombs(dt):
+def update_bombs(cli,dt):
     for b in bombs:
         b.update(dt)
         if b.time < 1:
             b.bomber.bomb_limit += 1
             grid[b.posX][b.posY] = 0
-            exp_temp = Explosion(b.posX, b.posY, b.range)
+            exp_temp = Explosion(b.posX, b.posY, b.range,cli)
             exp_temp.explode(grid, bombs, b)
-            exp_temp.clear_sectors(grid)
+            exp_temp.clear_sectors(grid,boxes)
+            sync_boxes(cli)
             explosions.append(exp_temp)
-    if player not in enemy_list:
-        player.check_death(explosions)
+            
+    if en0 not in enemy_list:
+        if player.life:
+            check = player.check_death(explosions)
+            if check == False:
+                print('player: ',cli.player_id)
+                x,y = player.position()
+                sendAction(cli,'death',x,y)
+            
     for en in enemy_list:
-        en.check_death(explosions)
+        if en.algorithm != Algorithm.REMOTE:
+            if en.life:
+                check = en.check_death(explosions)
+                if check == False:
+                    #cli.gamestate.players.pop(en.id)
+                    #print('enemy ',en.id)
+                    x,y = player.position()
+                    sendAction(cli,'death',x,y)
     for e in explosions:
         e.update(dt)
         if e.time < 1:
@@ -443,10 +475,10 @@ def start_server(cli,args):
     cli.join_server(args.id)
     cli.start()
 
-def game_over():
+def game_over(cli):
     while True:
         dt = clock.tick(15)
-        update_bombs(dt)
+        update_bombs(cli,dt)
         count = 0
         winner = ""
         for en in enemy_list:

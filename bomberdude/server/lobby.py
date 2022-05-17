@@ -59,7 +59,7 @@ class Lobby(Thread):
         """
         super(Lobby, self).__init__()
         self.game_state_lock = Lock()
-        self.game_state = GameState(self.game_state_lock, {})
+        self.game_state = GameState(self.game_state_lock, {}, {})
         logging.basicConfig(
             level=self.level, format='%(levelname)s: %(message)s')
 
@@ -277,15 +277,22 @@ class Lobby(Thread):
                 time.sleep(0.03)
 
             self.in_game = True
-            _out: Dict[Conn, Dict[str, int | float | str]] = {}
+            _out: Dict[Conn, Dict[str, int | float | str | Dict[int, Tuple[int, int]]]] = {}
             start_time = time.time()
 
+            self.game_state.generate_map()
+            
+            print('sending boxes: ',self.game_state.boxes)
+            
             for i, c in enumerate(self.conns):
                 _out[c] = {
                     'id': i+1,
                     'time': start_time,
                     'uuid': c.uuid,
+                    'boxes': self.game_state.boxes
                 }
+                
+            
 
             while start_time + 5 > time.time():
                 for k, v in _out.items():
@@ -295,6 +302,8 @@ class Lobby(Thread):
                 time.sleep(0.05)
 
             logging.info('Game started on lobby %s', self.uuid)
+            
+            
             while self.in_game:
                 _incoming_changes = []
 
@@ -308,7 +317,7 @@ class Lobby(Thread):
                     #changes = payload.data
                     for change in changes:
                         self.game_state._apply_change(change)
-                    #print(changes)
+                    print(changes)
                     # append updates to the outgoing queue
                     self.action_queue_outbound.extend(changes)
 
