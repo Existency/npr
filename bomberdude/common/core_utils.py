@@ -1,4 +1,5 @@
 from ast import Bytes
+from ipaddress import ip_address
 from xml.dom import minidom
 from os import listdir
 from os.path import isdir, join
@@ -94,3 +95,23 @@ def get_node_ipv6(id: str) -> Optional[bytes]:
                 return struct.pack('!8H', *ip_parts)
 
     return None
+
+
+def explode_ipv6(ipv6: str) -> str:
+    """
+    Explode an IPv6 address into a readable string.
+
+    :param ipv6: The IPv6 address to explode.
+    :return: The exploded IPv6 address.
+    """
+    return ip_address(ipv6).exploded
+
+
+def compress_ipv6(ipv6: str) -> str:
+    """
+    Compress an IPv6 address into a readable string.
+
+    :param ipv6: The IPv6 address to compress.
+    :return: The compressed IPv6 address.
+    """
+    return ip_address(ipv6).compressed

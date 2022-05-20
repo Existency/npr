@@ -1,7 +1,7 @@
 from __future__ import annotations
 from .connection import Conn
 from common.state import GameState
-from common.payload import ACTIONS, KALIVE, LEAVE, STATE, Payload, get_payload_type
+from common.payload import ACTIONS, KALIVE, LEAVE, STATE, Payload
 from common.state import Change, bytes_from_changes, change_from_bytes
 from dataclasses import dataclass, field
 from functools import singledispatchmethod
@@ -220,18 +220,16 @@ class Lobby(Thread):
                     # TODO: Change this later for NDN redirect support
                     logging.debug('Connection not found.',)
                     continue
-                
-                
+
                 # If the payload's sequence number is equal or older than the current one, discard
                 # TODO: This is a hack fix, will require some work later on
                 if payload.seq_num <= conn.seq_num:
-                    print('Sequence number is older, %s',conn.__str__())
-                    logging.debug('Sequence number is older, %s',conn.__str__())
+                    print('Sequence number is older, %s', conn.__str__())
+                    logging.debug('Sequence number is older, %s',
+                                  conn.__str__())
                     continue
                 conn.seq_num += 1
 
-                
-                
                 # If it's an action, append it to the action queue
                 if payload.type == ACTIONS:
                     with self.game_state_lock:
@@ -275,13 +273,14 @@ class Lobby(Thread):
                 time.sleep(0.03)
 
             self.in_game = True
-            _out: Dict[Conn, Dict[str, int | float | str | Dict[int, Tuple[int, int]]]] = {}
+            _out: Dict[Conn, Dict[str, int | float |
+                                  str | Dict[int, Tuple[int, int]]]] = {}
             start_time = time.time()
 
             self.game_state.generate_map()
-            
-            print('sending boxes: ',self.game_state.boxes)
-            
+
+            print('sending boxes: ', self.game_state.boxes)
+
             for i, c in enumerate(self.conns):
                 _out[c] = {
                     'id': i+1,
@@ -289,8 +288,6 @@ class Lobby(Thread):
                     'uuid': c.uuid,
                     'boxes': self.game_state.boxes
                 }
-                
-            
 
             while start_time + 5 > time.time():
                 for k, v in _out.items():
@@ -301,8 +298,7 @@ class Lobby(Thread):
                 time.sleep(0.05)
 
             logging.info('Game started on lobby %s', self.uuid)
-            
-            
+
             while self.in_game:
                 _incoming_changes = []
 
@@ -327,31 +323,26 @@ class Lobby(Thread):
             self.game_state.reset()
 
     def _handle_outgoing(self):
-        
-        
         """
         This method should not be called directly.
 
         Method running in a separate thread to handle outgoing data.
         The data to be sent is taken from the outbound action queue.
         """
-        
+
         while self.running:
             actions = []
             with self.game_state_lock:
                 actions = self.action_queue_outbound
                 self.action_queue_outbound = []
-                
 
             # convert actions to bytes
             data = bytes_from_changes(actions)
-            
-            
+
             for c in self.conns:
                 payload = Payload(ACTIONS, data, self.uuid,
-                    c.uuid, 0)
-                
-                
+                                  c.uuid, 0, self.byte_address, c.byte_address)
+
                 c.send(payload.to_bytes(), self.out_sock)
 
             time.sleep(0.001)

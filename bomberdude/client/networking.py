@@ -1,6 +1,5 @@
 from __future__ import annotations
-from common.location import get_node_xy
-from common.state import Change, GameState, change_from_bytes, parse_payload 
+from common.state import Change, GameState, change_from_bytes, parse_payload
 from functools import cached_property
 from ipaddress import ip_address
 from common.core_utils import get_node_xy
@@ -209,7 +208,7 @@ class NetClient(Thread):
 
         :param data: The payload to be sent.
         """
-        #print(self.seq_num)
+        # print(self.seq_num)
         sent = self.out_sock.sendto(data, self.lobby_ip)
         logging.debug('Sent %d bytes to server', sent)
 
@@ -224,7 +223,6 @@ class NetClient(Thread):
             while not self.started:
                 # Wait until server sends us a STATE message with our ID
                 time.sleep(0.1)
-                
 
             # reset for next game
             self.started = False
@@ -237,8 +235,8 @@ class NetClient(Thread):
                     self.queue_inbound = []
                 for change in _incoming_changes:
                     self.gamestate._apply_change(change)
-                    #print('change',change)
-                    #print(self.gamestate.get_player_positions())
+                    # print('change',change)
+                    # print(self.gamestate.get_player_positions())
 
                 time.sleep(0.03)
 
@@ -356,8 +354,7 @@ class NetClient(Thread):
                     continue
 
                 payload = Payload.from_bytes(data)
-                
-                
+
                 if payload.type == REDIRECT:
                     with self.outbound_lock:
                         self.outbound_queue.append(
@@ -372,10 +369,10 @@ class NetClient(Thread):
                         self.last_kalive = time.time()
 
                     elif payload.type == ACTIONS:
-                        
+
                         changes = change_from_bytes(payload.data)
 
-                        if changes is not None:                               
+                        if changes is not None:
                             with self.inbound_lock:
                                 self.queue_inbound.extend(changes)
 
