@@ -1,8 +1,9 @@
 from __future__ import annotations
+from common.location import get_node_xy
+from common.state import Change, GameState, change_from_bytes, parse_payload 
 from functools import cached_property
 from ipaddress import ip_address
 from common.core_utils import get_node_xy
-from common.state import Change, GameState, parse_payload
 from common.payload import ACTIONS, KALIVE, REJOIN, STATE, Payload, ACCEPT, LEAVE, JOIN, REDIRECT, REJECT
 from dataclasses import dataclass, field
 import logging
@@ -60,7 +61,8 @@ class NetClient(Thread):
 
     def __post_init__(self):
         super(NetClient, self).__init__()
-        self.gamestate = GameState(self.slock, {})
+        self.gamestate = GameState(self.slock, {}, {})
+        #self.cur_pos = get_node_xy(self.npath)
         logging.basicConfig(
             level=self.level, format='%(levelname)s: %(message)s')
 
@@ -207,6 +209,7 @@ class NetClient(Thread):
 
         :param data: The payload to be sent.
         """
+        #print(self.seq_num)
         sent = self.out_sock.sendto(data, self.lobby_ip)
         logging.debug('Sent %d bytes to server', sent)
 
@@ -221,6 +224,7 @@ class NetClient(Thread):
             while not self.started:
                 # Wait until server sends us a STATE message with our ID
                 time.sleep(0.1)
+                
 
             # reset for next game
             self.started = False
@@ -229,11 +233,12 @@ class NetClient(Thread):
                 _incoming_changes = []
 
                 with self.slock:
-                    _incoming_changes = self.inbound_queue
-                    self.inbound_queue = []
-
+                    _incoming_changes = self.queue_inbound
+                    self.queue_inbound = []
                 for change in _incoming_changes:
                     self.gamestate._apply_change(change)
+                    #print('change',change)
+                    #print(self.gamestate.get_player_positions())
 
                 time.sleep(0.03)
 
@@ -351,7 +356,8 @@ class NetClient(Thread):
                     continue
 
                 payload = Payload.from_bytes(data)
-
+                
+                
                 if payload.type == REDIRECT:
                     with self.outbound_lock:
                         self.outbound_queue.append(
@@ -362,15 +368,16 @@ class NetClient(Thread):
                     # if it's a game event, add it to the queue_inbound
                     # if it's not, pass it to the queue_message
                     if payload.type == KALIVE:
-                        logging.info('Received KALIVE.')
+                       # logging.info('Received KALIVE.')
                         self.last_kalive = time.time()
 
                     elif payload.type == ACTIONS:
-                        inc = parse_payload(payload)
+                        
+                        changes = change_from_bytes(payload.data)
 
-                        if inc is not None:
+                        if changes is not None:                               
                             with self.inbound_lock:
-                                self.inbound_queue.extend(inc)
+                                self.queue_inbound.extend(changes)
 
                     elif payload.type == STATE and self.started == False:
                         # update the client's state and set the started flag to true
@@ -379,6 +386,8 @@ class NetClient(Thread):
                             self.started = True
                             self.start_time = state['time']
                             self.player_id = state['id']
+                            #print('dealing with boxes',state['boxes'])
+                            self.gamestate.boxes = state['boxes']
 
             except timeout:
                 logging.info('Socket recv timed out.')

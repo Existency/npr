@@ -1,15 +1,22 @@
+from matplotlib.pyplot import grid
 import pygame
 import random
 from .bomb import Bomb
 from .node import Node
 from .algorithm import Algorithm
+from common.payload import ACTIONS, KALIVE, REJOIN, STATE, Payload, ACCEPT, LEAVE, JOIN, REDIRECT, REJECT
+from common.state import Change
+from typing import Tuple, List
+from threading import Lock
+import math, time
 
 
 class Enemy:
 
     dire = [[1, 0, 1], [0, 1, 0], [-1, 0, 3], [0, -1, 2]]
 
-    def __init__(self, x, y, alg):
+    def __init__(self, x, y, alg,cli,id):
+        self.cli = cli
         self.life = True
         self.path = []
         self.movement_path = []
@@ -22,16 +29,38 @@ class Enemy:
         self.bomb_limit = 1
         self.plant = False
         self.algorithm = alg
+        self.lock = Lock()
+        self.id = id
+
+    def sendAction(self,action,x,y):
+        move_x,move_y = self.posX,self.posY
+        
+        tile_id = None    
+        match action:
+            case 'move' : tile_id = self.cli.player_id + 9
+            case 'bomb': tile_id = 2
+        
+
+        data = Change((int(x/4),int(y/4),self.cli.player_id+9),(int(move_x/4),int(move_y/4),tile_id))
+        self.cli.seq_num += 1
+        payload = Payload(ACTIONS, data.to_bytes(), self.cli.lobby_uuid,
+                        self.cli.player_uuid, self.cli.seq_num)
+        
+        self.cli.unicast(payload.to_bytes())
 
     def move(self, map, bombs, explosions, enemy):
 
         if self.direction == 0:
+            
             self.posY += 1
         elif self.direction == 1:
+            
             self.posX += 1
         elif self.direction == 2:
+            
             self.posY -= 1
         elif self.direction == 3:
+            
             self.posX -= 1
 
         if self.posX % 4 == 0 and self.posY % 4 == 0:
@@ -44,28 +73,147 @@ class Enemy:
                     self.movement_path.clear()
                     self.path.clear()
 
-        if self.frame == 2:
-            self.frame = 0
-        else:
-            self.frame += 1
 
+    def move_input(self, dx, dy, grid, enemys):
+        tempx = int(self.posX/4)
+        tempy = int(self.posY/4)
+
+        map = []
+
+        for i in range(len(grid)):
+            map.append([])
+            for j in range(len(grid[i])):
+                map[i].append(grid[i][j])
+
+        for x in enemys:
+            if x == self:
+                continue
+            elif not x.life:
+                continue
+            else:
+                map[int(x.posX/4)][int(x.posY/4)] = 2
+
+        if self.posX % 4 != 0 and dx == 0:
+            if self.posX % 4 == 1:
+                self.posX -= 1
+            elif self.posX % 4 == 3:
+                self.posX += 1
+            return
+        if self.posY % 4 != 0 and dy == 0:
+            if self.posY % 4 == 1:
+                self.posY -= 1
+            elif self.posY % 4 == 3:
+                self.posY += 1
+            return
+
+        # right
+        if dx == 1:
+            if map[tempx+1][tempy] == 0:
+                self.posX += 1
+        # left
+        elif dx == -1:
+            tempx = math.ceil(self.posX / 4)
+            if map[tempx-1][tempy] == 0:
+                self.posX -= 1
+
+        # bottom
+        if dy == 1:
+            if map[tempx][tempy+1] == 0:
+                self.posY += 1
+        # top
+        elif dy == -1:
+            tempy = math.ceil(self.posY / 4)
+            if map[tempx][tempy-1] == 0:
+                self.posY -= 1
+                
+
+
+    def getActionMove(self, map, bombs, explosions, enemy,x,y):
+        bomb = None
+        
+        with self.lock:
+            #print(self.cli.gamestate.players)
+            
+            if self.id not in self.cli.gamestate.players:
+                self.life = False
+            #    print('it works maybe? ',self.id,' died')
+                return
+            
+            if self.id in self.cli.gamestate.bombs:
+                bomb = self.cli.gamestate.bombs[self.id] 
+            
+            new_x, new_y = self.cli.gamestate.get_player_positions()[self.id]  
+         
+        
+        dx = None
+        dy = None
+        nx = new_x*4
+        ny = new_y*4
+        
+        
+        if x == nx:
+            dx = 0
+        
+        if y == ny:
+            dy = 0
+        
+        #if  x != nx or  y != ny:
+            #print('x',x,nx)
+            #print('y',y,ny)
+        
+        if x + 4 == nx:
+            dx = 1
+    
+        if x - 4 == nx:
+            dx = -1
+            
+        if y + 4 == ny:
+            dy = 1
+            
+        if y - 4 == ny:
+            dy = -1
+            
+        #print(dx,dy)
+        
+        #self.move_input(dx,dy,map,enemy)
+        self.posX = nx
+        self.posY = ny
+        
+        
+        if bomb:
+            #print(bomb)
+            bombs.append(self.plant_bomb(map))
+            map[int(self.posX / 4)][int(self.posY / 4)] = 3
+            self.cli.gamestate.bombs.pop(self.id)
+        
+
+
+            
+    
     def make_move(self, map, bombs, explosions, enemy):
-
         if not self.life:
             return
-        if len(self.movement_path) == 0:
-            if self.plant:
-                bombs.append(self.plant_bomb(map))
-                self.plant = False
-                map[int(self.posX / 4)][int(self.posY / 4)] = 3
-            if self.algorithm is Algorithm.DFS:
-                self.dfs(self.create_grid(map, bombs, explosions, enemy))
+        
+        if self.algorithm is Algorithm.REMOTE:
+            self.getActionMove(map,bombs,explosions,enemy,self.posX,self.posY)
+        else:    
+            if len(self.movement_path) == 0:
+                if self.plant:
+                    self.sendAction('bomb',self.posX,self.posY)
+                    bombs.append(self.plant_bomb(map))
+                    self.plant = False
+                    map[int(self.posX / 4)][int(self.posY / 4)] = 3
+                if self.algorithm is Algorithm.DFS:
+                    self.dfs(self.create_grid(map, bombs, explosions, enemy))
+                elif self.algorithm is Algorithm.DIJKSTRA:
+                    self.dijkstra(self.create_grid_dijkstra(map, bombs, explosions, enemy))
+                  
             else:
-                self.dijkstra(self.create_grid_dijkstra(map, bombs, explosions, enemy))
-
-        else:
-            self.direction = self.movement_path[0]
-            self.move(map, bombs, explosions, enemy)
+                self.direction = self.movement_path[0]
+                x = self.posX
+                y = self.posY
+                self.move(map, bombs, explosions, enemy)
+                self.sendAction('move',x,y)
 
     def plant_bomb(self, map):
         b = Bomb(self.range, round(self.posX / 4), round(self.posY / 4), map, self)
@@ -73,14 +221,16 @@ class Enemy:
         return b
 
     def check_death(self, exp):
-
+        
         for e in exp:
             for s in e.sectors:
                 if int(self.posX / 4) == s[0] and int(self.posY / 4) == s[1]:
                     if e.bomber == self:
-                        print(str(self.algorithm.value) + " SUICIDE")
+                        print(str(self.algorithm.value) + " Self Wrecked")
                     self.life = False
-                    return
+                    return False
+        return True
+        
 
     def dfs(self, grid):
 

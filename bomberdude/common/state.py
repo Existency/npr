@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Tuple
 from threading import Lock
 from .payload import ACTIONS, Payload
 import time
+import random
 
 FLOOR: int = 0
 WALL: int = 1
@@ -101,6 +102,8 @@ def bytes_from_changes(lst: List[Change]) -> bytes:
     return data
 
 
+
+
 @dataclass
 class Change:
     """
@@ -147,11 +150,13 @@ class GameState:
     Attributes:
         state (list[list[int]]): The state of the game.
         players (dict[int, tuple[int,int]]): The players of the game, {id: (x,y)}.
-        bombs (dict[int, [float, int, int]]): The bombs of the gamem {id: (ts,x,y)}.
+        boxes (dict[int, tuple[int,int]]): The boxes of the game, {id: (x,y)}.
+        bombs (dict[int, [float, int, int]]): The bombs of the game {id: (ts,x,y)}.
         mode (int): The mode that dictates how this class should behave.
     """
     lock: Lock
     players: Dict[int, Tuple[int, int]]  # {id: (x, y)}
+    boxes: Dict[int, Tuple[int, int]] # {id: (x, y)}
     mode: int = field(default=0)  # defaults to 0 for player, 1 for server
     state: List[List[int]] = field(default_factory=lambda: state)
     bombs: Dict[int, Tuple[float, int, int]] = field(default_factory=dict)
@@ -163,13 +168,27 @@ class GameState:
         Resets the game state.
         """
         self.players = {
-            0: (1, 1),
-            1: (12, 1),
-            2: (1, 12),
-            3: (12, 12),
+            1: (1, 1),
+            2: (11, 1),
+            3: (1, 11),
+            4: (11, 11),
         }
         self.bombs = {}
         self.explosions = []
+        
+    def generate_map(self):
+        n = 120
+        for i in range(1, len(state) - 1):
+            for j in range(1, len(state[i]) - 1):
+                if state[i][j] != 0:
+                    continue
+                elif (i < 3 or i > len(state) - 4) and (j < 3 or j > len(state[i]) - 4):
+                    continue
+                if random.randint(0, 9) < 7:
+                    state[i][j] = 2
+                    self.boxes[n] = (i,j)
+                    n +=1
+        return
 
     def get_state(self) -> list[list[int]]:
         """Returns the state of the game.
@@ -205,6 +224,25 @@ class GameState:
         _x, _y, _t = change.next
         self.state[y][x] = t
         self.state[_y][_x] = _t
+        
+        #print('state: ',change)
+        
+        #print(t)
+        if 9 < t and t < 15 and _t < 15:
+            if _t > 15:
+                print('This is not a movement')
+            self.players[t-9] = (_x,_y)
+        
+        if _t == 2:    
+            self.bombs[t-9] = (time.time(), _x, _y)
+            
+        if 109 < _t <115 :  
+            print('popping player:',t-9)  
+            self.players.pop(t-9)
+            
+        if   120 < t :
+            if t in self.bombs:
+                self.bombs.pop(t)
 
     def _is_player(self, val: int, x: int, y: int) -> Optional[int]:
         """
