@@ -1,6 +1,6 @@
 from typing import Tuple
 from common.payload import ACTIONS, Payload
-from common.state import Change
+from common.state import Change, bytes_from_changes 
 
 class Explosion:
 
@@ -16,12 +16,13 @@ class Explosion:
         self.cli = cli
         
     
-    def send_pop_box(self,key,x,y):
-        
-        data = Change((x,y,int(key)),(x,y,int(key)))
+    def send_pop_box(self,box_sectors):
+        list_changes = []
+        for box in box_sectors:
+            list_changes.append(Change((int(box[1]),int(box[2]),int(box[0])),(int(box[1]),int(box[2]),int(box[0]))))
         
         self.cli.seq_num += 1
-        payload = Payload(ACTIONS, data.to_bytes(), self.cli.lobby_uuid,
+        payload = Payload(ACTIONS, bytes_from_changes(list_changes), self.cli.lobby_uuid,
                         self.cli.player_uuid, self.cli.seq_num)
         
         self.cli.unicast(payload.to_bytes())
@@ -46,16 +47,20 @@ class Explosion:
                     self.explode(map, bombs, x)
 
     def clear_sectors(self, map,boxes):
-
+        box_sector = []
+        
         for i in self.sectors:
             if map[i[0]][i[1]] == 2:
                 t = [i[0],i[1]]
                 key = list(boxes.keys())[list(boxes.values()).index(t)]
+                
                 print('remove block: ',key)
                 if key in self.cli.gamestate.boxes:
                     self.cli.gamestate.boxes.pop(key)
-                    self.send_pop_box(key,i[0],i[1])
+                    box_sector.append((key,i[0],i[1]))
+                    #self.send_pop_box(key,i[0],i[1])
             map[i[0]][i[1]] = 0
+        self.send_pop_box(box_sector)
             
 
     def update(self, dt):
