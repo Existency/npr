@@ -12,7 +12,7 @@ from typing import Tuple, List
 from threading import Thread, Lock
 from socket import socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, timeout, INADDR_ANY
 import json
-from common.types import Address, MobileMap, Position
+from common.types import DEFAULT_PORT, Address, MobileMap, Position
 
 InboundQueue = List[Change]
 """A list of changes to be applied to the game state."""
@@ -113,7 +113,7 @@ class NetClient(Thread):
 
         while True:
             try:
-                resp, addr = in_sock.recvfrom(1024)
+                resp, addr = in_sock.recvfrom(1500)
 
                 if len(resp) < 50:
                     # ignore these packets
@@ -237,52 +237,57 @@ class NetClient(Thread):
 
                 time.sleep(0.03)
 
-    def _broadcast_kalive(self):
+    def _broadcast_kalive_mobile(self):
+        """
+        Method shouldn't be called directly from outside the class.
+
+
+        This message is used to broadcast the kalive to the server in a mobile context.
+        """
+        byte_address = struct.pack('!8H', *[int(part, 10)
+                                            for part in ip_address('ff02::1').exploded.split(':')])
+
+        # mobile clients
+        while self.running:
+            # check whether last kalive from server was more than 5 seconds ago
+            if time.time() - self.last_kalive > 5:
+                logging.warning('Server not responding...')
+
+            location = self.location
+
+            data = bytes(str(location[0]) +
+                         ',' + str(location[1]), 'utf-8')
+
+            payload = Payload(KALIVE, data, self.lobby_uuid,
+                              self.player_uuid, self.seq_num, self.byte_address, byte_address)
+
+            self.seq_num += 1
+            self.multicast(payload.to_bytes())
+            time.sleep(1)
+
+    def _broadcast_kalive_wired(self):
         """
         Method shouldn't be called directly from outside the class.
 
         This method is used to broadcast the kalive to the server.
         """
 
-        if self.is_mobile:
-            byte_address = struct.pack('!8H', *[int(part, 10)
-                                                for part in ip_address('ff02::1').exploded.split(':')])
+        location = self.location
+        data = bytes(str(location[0]) +
+                     ',' + str(location[1]), 'utf-8')
 
-            # mobile clients
-            while self.running:
-                # check whether last kalive from server was more than 5 seconds ago
-                if time.time() - self.last_kalive > 5:
-                    logging.warning('Server not responding...')
+        # non mobile clients
+        while self.running:
+            # check whether last kalive from server was more than 5 seconds ago
+            if time.time() - self.last_kalive > 5:
+                logging.warning('Server not responding...')
 
-                location = self.location
+            payload = Payload(KALIVE, data, self.lobby_uuid,
+                              self.player_uuid, self.seq_num, self.byte_address, self.lobby_byte_address)
 
-                data = bytes(str(location[0]) +
-                             ',' + str(location[1]), 'utf-8')
-
-                payload = Payload(KALIVE, data, self.lobby_uuid,
-                                  self.player_uuid, self.seq_num, self.byte_address, byte_address)
-
-                self.seq_num += 1
-                self.multicast(payload.to_bytes())
-                time.sleep(1)
-
-        else:
-            location = self.location
-            data = bytes(str(location[0]) +
-                         ',' + str(location[1]), 'utf-8')
-
-            # non mobile clients
-            while self.running:
-                # check whether last kalive from server was more than 5 seconds ago
-                if time.time() - self.last_kalive > 5:
-                    logging.warning('Server not responding...')
-
-                payload = Payload(KALIVE, data, self.lobby_uuid,
-                                  self.player_uuid, self.seq_num, self.byte_address, self.lobby_byte_address)
-
-                self.seq_num += 1
-                self.unicast(payload.to_bytes())
-                time.sleep(1)
+            self.seq_num += 1
+            self.unicast(payload.to_bytes())
+            time.sleep(1)
 
     def _handle_metrics_update(self):
         """
@@ -294,7 +299,26 @@ class NetClient(Thread):
 
             time.sleep(0.1)
 
-    def _handle_output(self):
+    def _handle_output_mobile(self):
+        """
+        Method shouldn't be called directly from outside the class.
+
+        This method is used to handle the output queue in a mobile context.
+        """
+        while self.running:
+            packets = []
+
+            with self.slock:
+                packets = self.outbound_queue
+                self.outbound_queue = []
+
+            for packet in packets:
+                # TODO: Define a proper way to handle the packet sending.
+                pass
+
+            time.sleep(0.03)
+
+    def _handle_output_wired(self):
         """
         Method shouldn't be called directly from outside the class.
 
@@ -321,7 +345,7 @@ class NetClient(Thread):
         """
         while self.running:
             try:
-                data, addr = self.in_sock.recvfrom(1024)
+                data, addr = self.in_sock.recvfrom(1500)
 
                 if len(data) < 50:
                     continue
@@ -330,8 +354,8 @@ class NetClient(Thread):
 
                 if payload.type == REDIRECT:
                     with self.outbound_lock:
-                        self.outbound_queue.append((payload, addr))
-                    return
+                        self.outbound_queue.append(
+                            (payload, (payload.short_destination, DEFAULT_PORT)))
 
                 if payload.lobby_uuid == self.lobby_uuid and payload.player_uuid == self.player_uuid:
                     # Parse the payload and check whether it's an event or not
@@ -373,16 +397,23 @@ class NetClient(Thread):
         self.running = True
         Thread(target=self._handle_state).start()
         logging.info('State handler started.')
-        Thread(target=self._broadcast_kalive).start()
-        logging.info('Kalive handler started.')
-        Thread(target=self._handle_output).start()
-        logging.info('Output handler started.')
         Thread(target=self._handle_input).start()
         logging.info('Input handler started.')
 
         if self.is_mobile:
+            Thread(target=self._broadcast_kalive_mobile).start()
+            logging.info('Kalive (mobile) handler started.')
+            Thread(target=self._handle_output_mobile).start()
+            logging.info('Output (mobile) handler started.')
+
             Thread(target=self._handle_metrics_update).start()
             logging.info('Metrics update handler started.')
+
+        else:
+            Thread(target=self._broadcast_kalive_wired).start()
+            logging.info('Kalive (wired) handler started.')
+            Thread(target=self._handle_output_wired).start()
+            logging.info('Output (wired) handler started.')
 
         while self.running:
             time.sleep(0.1)

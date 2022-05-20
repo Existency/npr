@@ -208,7 +208,7 @@ class Lobby(Thread):
         while self.running:
 
             try:
-                data, _ = self.in_sock.recvfrom(1024)
+                data, _ = self.in_sock.recvfrom(1500)
 
                 # parse the data
                 payload = Payload.from_bytes(data)
@@ -347,6 +347,10 @@ class Lobby(Thread):
             for c in self.conns:
                 if c.timed_out:
                     self.remove_player(c)
+
+            # if no one is connected, stop the lobby
+            if len(self.conns) == 0:
+                self.terminate()
 
             sent = 0
 

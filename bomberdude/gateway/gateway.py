@@ -261,6 +261,38 @@ class EdgeNode:
 
         pass
 
+    def _handle_incoming_dtn(self):
+        """
+        Handles incoming IPv6 messages.
+
+
+        """
+        while self.running:
+            try:
+                data, addr = self.dtn_sock.recvfrom(1500)
+                logging.info('Received {} from {}'.format(data, addr))
+
+                address = (addr[0], addr[1])
+
+                payload = Payload.from_bytes(data)
+                logging.debug(
+                    'Received payload with type {}'.format(payload.type_str))
+
+                if address in self.mobile_nodes:
+                    # update the node's data
+                    self.mobile_nodes[address] = (
+                        self.mobile_nodes[address][0],
+                        self.mobile_nodes[address][1],
+                        time.time(),
+                        self.mobile_nodes[address][3] + 1)
+                else:
+                    pass
+
+            except Exception as e:
+                logging.error(
+                    'Failed to handle incoming IPv6 message: {}'.format(e))
+                continue
+
     def _handle_incoming(self):
         """
         Handles the incoming messages.
@@ -273,11 +305,14 @@ class EdgeNode:
         """
         while self.running:
             try:
-                data, addr = self.in_socket.recvfrom(1024)
+                data, addr = self.in_socket.recvfrom(1500)
+                logging.info('Received {} from {}'.format(data, addr))
 
                 address = (addr[0], addr[1])
 
                 payload = Payload.from_bytes(data)
+                logging.debug(
+                    'Received payload with type: {}'.format(payload.type_str))
 
                 # Figure whether the message is from the server or from a mobile node
                 if address == self.server_address:

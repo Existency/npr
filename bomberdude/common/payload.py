@@ -2,6 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from functools import cached_property
 import struct
+from ipaddress import ip_address
 
 
 # These serve as the list of available payload types.
@@ -108,6 +109,13 @@ class Payload:
         Retrieves the payload type str representation.
         """
         return ptypes.get(self.type, 'UNKNOWN')
+
+    @cached_property
+    def short_destination(self) -> str:
+        """
+        Retrieves the short representation of the destination.
+        """
+        return ip_address(self.destination).compressed
 
     @classmethod
     def from_bytes(cls, data: bytes) -> Payload:

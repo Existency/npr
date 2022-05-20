@@ -184,7 +184,7 @@ class Server(Thread):
         """
         while self.running:
             try:
-                data, addr = self.sock.recvfrom(1024)
+                data, addr = self.sock.recvfrom(1500)
 
                 logging.debug("Received data from %s: %s", addr, data)
                 self.handle_data(data, addr)
