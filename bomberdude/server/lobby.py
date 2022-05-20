@@ -28,6 +28,7 @@ class Lobby(Thread):
     in_sock: socket
     out_sock: socket
     # logging level
+    byte_address: bytes
     level: int = field(default=logging.DEBUG)
     # max number of players allowed in the lobby
     capacity: int = field(default=4)
@@ -207,20 +208,17 @@ class Lobby(Thread):
         while self.running:
 
             try:
-                data, _ = self.in_sock.recvfrom(1024)
+                data, _ = self.in_sock.recvfrom(1500)
 
                 # parse the data
                 payload = Payload.from_bytes(data)
-                #logging.info('Received payload, %s',
-                #             get_payload_type(payload.type))
-                
-                
+                logging.info('Received payload, %s', payload.type_str)
                 # get the conn that sent the data
                 conn = self.get_player(payload.player_uuid)
 
                 if conn is None:
                     # TODO: Change this later for NDN redirect support
-                    logging.debug('Connection not found, %s', conn.__str__())
+                    logging.debug('Connection not found.',)
                     continue
                 
                 
@@ -297,7 +295,8 @@ class Lobby(Thread):
             while start_time + 5 > time.time():
                 for k, v in _out.items():
                     data = json.dumps(v).encode()
-                    payload = Payload(STATE, data, self.uuid, k.uuid, 0)
+                    payload = Payload(STATE, data, self.uuid,
+                                      k.uuid, 0, self.byte_address, k.byte_address)
                     k.send(payload.to_bytes(), self.out_sock)
                 time.sleep(0.05)
 
@@ -371,11 +370,15 @@ class Lobby(Thread):
                 if c.timed_out:
                     self.remove_player(c)
 
+            # if no one is connected, stop the lobby
+            if len(self.conns) == 0:
+                self.terminate()
+
             sent = 0
 
             for c in self.conns:
                 sent += c.send(Payload(KALIVE, b'', self.uuid,
-                                       c.uuid, 0).to_bytes(), self.out_sock)
+                                       c.uuid, 0, self.byte_address, c.byte_address).to_bytes(), self.out_sock)
 
             logging.debug('Sent %d bytes', sent)
 

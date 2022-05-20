@@ -3,7 +3,7 @@
 import argparse
 from client.networking import NetClient
 from client.client import Client
-from common.location import get_node_path
+from common.core_utils import get_node_path
 from logging import INFO, DEBUG, ERROR, WARNING
 
 if __name__ == '__main__':

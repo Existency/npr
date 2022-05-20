@@ -1,17 +1,25 @@
 from __future__ import annotations
-
-from charset_normalizer import from_bytes
 from common.location import get_node_xy
 from common.state import Change, GameState, change_from_bytes, parse_payload 
+from functools import cached_property
+from ipaddress import ip_address
+from common.core_utils import get_node_xy
 from common.payload import ACTIONS, KALIVE, REJOIN, STATE, Payload, ACCEPT, LEAVE, JOIN, REDIRECT, REJECT
 from dataclasses import dataclass, field
 import logging
 import time
+import struct
 from typing import Tuple, List
 from threading import Thread, Lock
-from socket import socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, timeout
+from socket import socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, timeout, INADDR_ANY
 import json
-from common.types import Address
+from common.types import DEFAULT_PORT, Address, MobileMap, Position
+
+InboundQueue = List[Change]
+"""A list of changes to be applied to the game state."""
+
+OutboundQueue = List[Tuple[Payload, Address]]
+"""A list of payloads to be sent."""
 
 
 @ dataclass
@@ -24,33 +32,29 @@ class NetClient(Thread):
     """
     auth_ip: Address
     port: int
-    #npath: str
+    npath: str
+    byte_address: bytes
     level: int = field(default=logging.INFO)
     slock: Lock = field(init=False, default_factory=Lock)
+    is_mobile: bool = field(default=False)
     gamestate: GameState = field(init=False)
     lobby_uuid: str = field(default='')
     player_uuid: str = field(default='')
     in_sock: socket = field(init=False)
     out_sock: socket = field(init=False)
-    inbound_lock: Lock = field(default_factory=Lock)
-    queue_inbound: List[Change] = field(
-        default_factory=list)
-    outbound_lock: Lock = field(default_factory=Lock)
-    queue_outbound: List[Tuple[Payload, Address]
-                         ] = field(default_factory=list)
-    message_lock: Lock = field(default_factory=Lock)
-    queue_message: List[Tuple[bytes,
-                              Address]] = field(default_factory=list)
+    inbound_lock: Lock = field(init=False, default_factory=Lock)
+    inbound_queue: InboundQueue = field(init=False, default_factory=list)
+    outbound_lock: Lock = field(init=False, default_factory=Lock)
+    outbound_queue: OutboundQueue = field(init=False, default_factory=list)
     running: bool = field(init=False, default=False)
     player_id: int = field(init=False, default=0)
     started: bool = field(init=False, default=False)
     last_kalive: float = field(init=False, default=0.0)
     lobby_ip: Address = field(init=False)
     start_time: float = field(init=False, default=0.0)
-    seq_num: int = field(init=True, default=0)
-
-    # gps related
-    cur_pos: Tuple[float, float] = field(init=False, default=(0.0, 0.0))
+    seq_num: int = field(init=False, default=0)
+    # This only exists in mobile clients
+    mobile_map: MobileMap = field(init=False)
 
     def __hash__(self) -> int:
         return super().__hash__()
@@ -70,9 +74,16 @@ class NetClient(Thread):
         Method used to get messages tuples from the queue.
         """
         with self.inbound_lock:
-            message: list = self.queue_inbound
-            self.queue_inbound = []
-            return message
+            inbound: list = self.inbound_queue
+            self.inbound_queue = []
+            return inbound
+
+    @property
+    def location(self) -> Position:
+        """
+        Method used to get the current location of the client.
+        """
+        return get_node_xy(self.npath)
 
     def join_server(self, lobby_id: str):
         """
@@ -80,7 +91,6 @@ class NetClient(Thread):
 
         :param lobby_id: The lobby ID to join.
         """
-
         in_sock = socket(AF_INET6, SOCK_DGRAM)
         in_sock.bind(('', self.port))
         in_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
@@ -91,8 +101,11 @@ class NetClient(Thread):
         out_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         out_sock.settimeout(2)
 
-        payload = Payload(JOIN, b'', lobby_id, '', self.seq_num)
-        retry_payload = Payload(REJOIN, b'', lobby_id, '', self.seq_num)
+        payload = Payload(JOIN, b'', lobby_id, '',
+                          self.seq_num, self.byte_address, self.byte_address)
+
+        retry_payload = Payload(REJOIN, b'', lobby_id,
+                                '', self.seq_num, self.byte_address, self.byte_address)
         retry_bytes = retry_payload.to_bytes()
         self.seq_num = + 1
         in_sock.sendto(payload.to_bytes(), self.auth_ip)
@@ -102,9 +115,9 @@ class NetClient(Thread):
 
         while True:
             try:
-                resp, addr = in_sock.recvfrom(1024)
+                resp, addr = in_sock.recvfrom(1500)
 
-                if len(resp) < 17:
+                if len(resp) < 50:
                     # ignore these packets
                     _try -= 1
                     continue
@@ -157,6 +170,14 @@ class NetClient(Thread):
 
             time.sleep(0.25)
 
+    @cached_property
+    def lobby_byte_address(self) -> bytes:
+        """
+        Returns the byte address of the lobby.
+        """
+        return struct.pack('!8H', *[int(part, 10)
+                                    for part in ip_address(self.lobby_ip[0]).exploded.split(':')])
+
     def reset(self):
         """
         Resets the client to its initial state preparing it to join a new lobby.
@@ -180,7 +201,7 @@ class NetClient(Thread):
 
         :param data: The data to be broadcasted.
         """
-        pass
+        self.out_sock.sendto(data, ('ff02::1', self.port))
 
     def unicast(self, data: bytes):
         """
@@ -213,9 +234,7 @@ class NetClient(Thread):
 
                 with self.slock:
                     _incoming_changes = self.queue_inbound
-                    #print(f'incoming: {_incoming_changes}')
                     self.queue_inbound = []
-                    
                 for change in _incoming_changes:
                     self.gamestate._apply_change(change)
                     #print('change',change)
@@ -223,24 +242,88 @@ class NetClient(Thread):
 
                 time.sleep(0.03)
 
-    def _broadcast_kalive(self):
+    def _broadcast_kalive_mobile(self):
         """
         Method shouldn't be called directly from outside the class.
 
-        This method is used to broadcast the kalive to the server.
+
+        This message is used to broadcast the kalive to the server in a mobile context.
         """
+        byte_address = struct.pack('!8H', *[int(part, 10)
+                                            for part in ip_address('ff02::1').exploded.split(':')])
+
+        # mobile clients
         while self.running:
             # check whether last kalive from server was more than 5 seconds ago
             if time.time() - self.last_kalive > 5:
                 logging.warning('Server not responding...')
 
-            payload = Payload(KALIVE, b'', self.lobby_uuid,
-                              self.player_uuid, self.seq_num)
+            location = self.location
+
+            data = bytes(str(location[0]) +
+                         ',' + str(location[1]), 'utf-8')
+
+            payload = Payload(KALIVE, data, self.lobby_uuid,
+                              self.player_uuid, self.seq_num, self.byte_address, byte_address)
+
+            self.seq_num += 1
+            self.multicast(payload.to_bytes())
+            time.sleep(1)
+
+    def _broadcast_kalive_wired(self):
+        """
+        Method shouldn't be called directly from outside the class.
+
+        This method is used to broadcast the kalive to the server.
+        """
+
+        location = self.location
+        data = bytes(str(location[0]) +
+                     ',' + str(location[1]), 'utf-8')
+
+        # non mobile clients
+        while self.running:
+            # check whether last kalive from server was more than 5 seconds ago
+            if time.time() - self.last_kalive > 5:
+                logging.warning('Server not responding...')
+
+            payload = Payload(KALIVE, data, self.lobby_uuid,
+                              self.player_uuid, self.seq_num, self.byte_address, self.lobby_byte_address)
+
             self.seq_num += 1
             self.unicast(payload.to_bytes())
             time.sleep(1)
 
-    def _handle_output(self):
+    def _handle_metrics_update(self):
+        """
+        Method shouldn't be called directly from outside the class.
+
+        This method is used to automatically update the prefered destination node.
+        """
+        while self.running:
+
+            time.sleep(0.1)
+
+    def _handle_output_mobile(self):
+        """
+        Method shouldn't be called directly from outside the class.
+
+        This method is used to handle the output queue in a mobile context.
+        """
+        while self.running:
+            packets = []
+
+            with self.slock:
+                packets = self.outbound_queue
+                self.outbound_queue = []
+
+            for packet in packets:
+                # TODO: Define a proper way to handle the packet sending.
+                pass
+
+            time.sleep(0.03)
+
+    def _handle_output_wired(self):
         """
         Method shouldn't be called directly from outside the class.
 
@@ -250,8 +333,8 @@ class NetClient(Thread):
             actions = []
 
             with self.outbound_lock:
-                actions = self.queue_outbound
-                self.queue_outbound = []
+                actions = self.outbound_queue
+                self.outbound_queue = []
 
             for action in actions:
                 self.unicast(action[0].to_bytes())
@@ -267,9 +350,9 @@ class NetClient(Thread):
         """
         while self.running:
             try:
-                data, addr = self.in_sock.recvfrom(1024)
+                data, addr = self.in_sock.recvfrom(1500)
 
-                if len(data) < 17:
+                if len(data) < 50:
                     continue
 
                 payload = Payload.from_bytes(data)
@@ -277,8 +360,8 @@ class NetClient(Thread):
                 
                 if payload.type == REDIRECT:
                     with self.outbound_lock:
-                        self.queue_outbound.append((payload, addr))
-                    return
+                        self.outbound_queue.append(
+                            (payload, (payload.short_destination, DEFAULT_PORT)))
 
                 if payload.lobby_uuid == self.lobby_uuid and payload.player_uuid == self.player_uuid:
                     # Parse the payload and check whether it's an event or not
@@ -291,16 +374,13 @@ class NetClient(Thread):
                     elif payload.type == ACTIONS:
                         
                         changes = change_from_bytes(payload.data)
-                        #inc = parse_payload(payload.data)
-                        
+
                         if changes is not None:                               
                             with self.inbound_lock:
                                 self.queue_inbound.extend(changes)
-                                
 
                     elif payload.type == STATE and self.started == False:
                         # update the client's state and set the started flag to true
-
                         state = json.loads(payload.data.decode('utf-8'))
                         if state['uuid'] == self.player_uuid:
                             self.started = True
@@ -318,17 +398,31 @@ class NetClient(Thread):
 
         self.terminate("Unexpected condition leading to termination.")
 
-        pass
-
     def run(self):
         """
         Main loop of the networking client.
         """
+
         self.running = True
         Thread(target=self._handle_state).start()
-        Thread(target=self._broadcast_kalive).start()
-        Thread(target=self._handle_output).start()
+        logging.info('State handler started.')
         Thread(target=self._handle_input).start()
+        logging.info('Input handler started.')
+
+        if self.is_mobile:
+            Thread(target=self._broadcast_kalive_mobile).start()
+            logging.info('Kalive (mobile) handler started.')
+            Thread(target=self._handle_output_mobile).start()
+            logging.info('Output (mobile) handler started.')
+
+            Thread(target=self._handle_metrics_update).start()
+            logging.info('Metrics update handler started.')
+
+        else:
+            Thread(target=self._broadcast_kalive_wired).start()
+            logging.info('Kalive (wired) handler started.')
+            Thread(target=self._handle_output_wired).start()
+            logging.info('Output (wired) handler started.')
 
         while self.running:
             time.sleep(0.1)
@@ -340,7 +434,8 @@ class NetClient(Thread):
         logging.info('Client leaving lobby by user request.')
         # TODO: Fix seq_num across all files
         payload = Payload(LEAVE, b'', self.lobby_uuid,
-                          self.player_uuid, self.seq_num)
+                          self.player_uuid, self.seq_num, self.byte_address, b'')
+
         self.seq_num += 1
         self.unicast(payload.to_bytes())
         # terminate the threaded socket
@@ -355,5 +450,3 @@ class NetClient(Thread):
         self.running = False
         self.in_game = False
         self.leave()
-
-# TODO: Implement tests for these.

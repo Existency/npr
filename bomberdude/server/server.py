@@ -1,5 +1,6 @@
 from common.payload import REJOIN, Payload, ACCEPT, REJECT, JOIN
 from common.uuid import uuid
+from common.core_utils import get_node_ipv6
 import logging
 from server.connection import Conn
 from server.lobby import Lobby
@@ -13,8 +14,9 @@ class Server(Thread):
     running: bool
     sock: socket.socket
     lobbies: list[Lobby]
+    byte_address: bytes
 
-    def __init__(self, port: int, level: int):
+    def __init__(self, id: str, port: int, level: int):
         """
         Initialize the socket server.
         """
@@ -26,6 +28,12 @@ class Server(Thread):
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.setblocking(False)
         self.sock.settimeout(2)
+
+        tmp = get_node_ipv6(id)
+
+        if tmp is not None:
+            self.byte_address = tmp
+
         # Set up logging
         logging.basicConfig(
             level=level, format='%(levelname)s: %(message)s')
@@ -64,7 +72,7 @@ class Server(Thread):
         out_sock.settimeout(2)
 
         # create a new lobby
-        lobby = Lobby(lobby_id, in_sock, out_sock)
+        lobby = Lobby(lobby_id, in_sock, out_sock, self.byte_address)
         lobby.start()
 
         # add the lobby to the list of lobbies
@@ -112,7 +120,8 @@ class Server(Thread):
         :param conn: The connection to send the response to.
         :param reason: The reason why the connection was denied.
         """
-        response = Payload(REJECT, reason.encode('utf-8'), '', conn.uuid, 0)
+        response = Payload(REJECT, reason.encode('utf-8'), '',
+                           conn.uuid, 0, self.byte_address, conn.byte_address)
 
         self.sock.sendto(response.to_bytes(), conn.address)
 
@@ -124,7 +133,9 @@ class Server(Thread):
         :param lobby: The lobby the player joined.
         """
         data = lobby.port.to_bytes(2, 'big')
-        response = Payload(ACCEPT, data, lobby.uuid, conn.uuid, 0)
+
+        response = Payload(ACCEPT, data, lobby.uuid, conn.uuid,
+                           0, self.byte_address, conn.byte_address)
 
         self.sock.sendto(response.to_bytes(), conn.address)
 
@@ -158,7 +169,7 @@ class Server(Thread):
             name = inc.data.decode('utf-8') if inc.data != b'' else 'anonymous'
 
             # create a new connection for the client
-            conn = Conn(addr, name, int(time.time()))
+            conn = Conn(addr, name, int(time.time()), inc.source)
             # add the connection to the lobby
             lobby.add_player(conn)
             # send the response to the client
@@ -173,7 +184,7 @@ class Server(Thread):
         """
         while self.running:
             try:
-                data, addr = self.sock.recvfrom(1024)
+                data, addr = self.sock.recvfrom(1500)
 
                 logging.debug("Received data from %s: %s", addr, data)
                 self.handle_data(data, addr)

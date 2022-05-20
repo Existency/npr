@@ -20,7 +20,8 @@ class Conn:
     """
     address: Tuple[str, int]
     name: str
-    last_kalive: float = field(default=0)
+    last_kalive: float
+    byte_address: bytes
     logger: Logger = field(init=False)
     seq_num: int = field(default_factory=int)
     uuid: str = field(init=False)
