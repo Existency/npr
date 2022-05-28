@@ -365,7 +365,7 @@ class EdgeNode:
 
             for (addr, payload, _) in outgoing:
                 logging.debug('Sending {} to {}'.format(payload, addr))
-                self.in_socket.sendto(payload.to_bytes(), addr)
+                self.out_socket.sendto(payload.to_bytes(), addr)
 
             # Send messages to the mobile nodes
             outgoing = self.outgoing_mobile.get_entries_not_sent()
@@ -376,11 +376,11 @@ class EdgeNode:
             for (addr, payload, _) in outgoing:
                 logging.debug('Sending {} to {} through {}.'.format(
                     payload, addr, out_addr))
-                self.dtn_sock.sendto(payload.to_bytes(), out_addr)
+                self.out_socket.sendto(payload.to_bytes(), out_addr)
 
-            #    # TODO: Requires three changes that I can think of right now.
-            #    #       1. The mobile nodes will need a local cache of nearby nodes, this way they can send messages to their neighbors.
-            #    #       2. The same ACK system as on gateway.py#192 should be implemented on mobile nodes.
+            # TODO: Requires two changes that I can think of right now.
+            #      1. The mobile nodes will need a local cache of nearby nodes, this way they can send messages to their neighbors.
+            #      2. The same ACK system as on gateway.py#192 should be implemented on mobile nodes.
 
             time.sleep(0.033)
 
@@ -411,14 +411,42 @@ class EdgeNode:
         while self.running:
             time.sleep(1)
 
+    def _on_leave_force_send(self):
+        """
+        Sends all the available outgoing messages to their destination.
+        This is a last effort to try and makes sure all messages are delivered.
+        This does not offer any guarantees that any of the messages will be delivered.
+        """
+
+        outgoing_server = self.outgoing_server.get_entries_not_sent() + \
+            self.outgoing_server.get_entries_sent()
+
+        outgoing_mobile = self.outgoing_mobile.get_entries_not_sent() + \
+            self.outgoing_mobile.get_entries_sent()
+
+        for (_, payload, _) in outgoing_server:
+            logging.debug('Sending {} to {}'.format(
+                payload, self.server_address))
+            self.out_socket.sendto(payload.to_bytes(), self.server_address)
+
+        out_addr = self._get_preferred_node()
+
+        for (addr, payload, _) in outgoing_mobile:
+            logging.debug('Sending {} to {} through {}.'.format(
+                payload, addr, out_addr))
+            self.out_socket.sendto(payload.to_bytes(), out_addr)
+
+        pass
+
     def leave(self):
         """
         Attempt to send all messages to the network.
 
         Afterwards, the node will closed.
         """
-
-        # TODO: Send all messages to the network
+        # Forcefully send all outgoing messages, even those already sent.
+        self._on_leave_force_send()
+        self.running = False
         logging.info('Leaving gateway node')
 
     def terminate(self, reason: str = "Unknown"):
@@ -427,7 +455,5 @@ class EdgeNode:
 
         :param reason: The reason for closing the node.
         """
-
         logging.info('Terminating gateway node: {}'.format(reason))
-        self.running = False
         self.leave()
