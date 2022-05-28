@@ -16,7 +16,7 @@ from threading import Thread, Lock
 from typing import List, Optional
 
 from common.payload import ACK, KALIVE, Payload
-from common.types import MCAST_GROUP, MCAST_PORT, Position, Address, MobileMap
+from common.types import DEFAULT_PORT, MCAST_GROUP, MCAST_PORT, Position, Address, MobileMap
 from common.cache import Cache
 from common.core_utils import get_node_distance, get_node_xy
 
@@ -56,7 +56,7 @@ class EdgeNode:
     outgoing_srv_lock: Lock = field(init=False, default_factory=Lock)
     """Lock for the outgoing server list."""
 
-    outgoing_server: List[Payload] = field(default_factory=list, init=False)
+    outgoing_server: Cache = field(init=False)
     """Messages meant for the server."""
 
     # TODO: Use ttl aswell as the coordinates as a metric to determine whether a node is stale.
@@ -74,6 +74,7 @@ class EdgeNode:
 
         # Create the outgoing cache
         self.outgoing_mobile = Cache(self.cache_timeout, level=self.level)
+        self.outgoing_server = Cache(self.cache_timeout, level=self.level)
 
         logging.info('gateway node initialized on {}'.format(self.position))
 
@@ -316,23 +317,35 @@ class EdgeNode:
 
                 # Figure whether the message is from the server or from a mobile node
                 if address == self.server_address:
-                    self.outgoing_mobile.add_entry(payload)
+                    # if the message is an ack, remove the data from the outgoing_server cache
+                    if payload.type == ACK:
+                        # the message's destination is the address of the sender of the original message
+                        destination = (payload.short_destination, DEFAULT_PORT)
+
+                        self.outgoing_server.purge_entries(
+                            payload.seq_num, destination)
+
+                    self.outgoing_mobile.add_entry(
+                        payload.seq_num, address, payload)
                     logging.info('Received message from server.')
+
                 else:
+                    # handle KALIVE messages
                     if payload.type == KALIVE:
                         payload = self.handle_kalive(address, payload)
 
-                    # TODO: Implement the following:
-                    #       - If the message is an ACK, remove it from the mobile_cache.
-                    #       - Refactor the payload class to include the TTL, Sender and Receiver addresses.
+                    # handle ACK messages
+                    if payload.type == ACK:
+                        destination = (payload.short_destination, DEFAULT_PORT)
 
-                    # if payload.type == ACK:
-                    #     self.outgoing_mobile.purge_entries(
-                    #         payload.seq_num, payload.address)
+                        self.outgoing_mobile.purge_entries(
+                            payload.seq_num, destination)
 
                     with self.outgoing_srv_lock:
-                        self.outgoing_server.append(payload)
-                    logging.info('Received message from mobile node.')
+                        self.outgoing_server.add_entry(
+                            payload.seq_num, address, payload)
+                    logging.info(
+                        'Received message from mobile node meant for server.')
 
             except Exception as e:
                 logging.error(e)
@@ -346,26 +359,30 @@ class EdgeNode:
         while self.running:
             # Send messages to the server
             outgoing = []
-            with self.outgoing_srv_lock:
-                outgoing = self.outgoing_server
-                self.outgoing_server = []
 
-            for payload in outgoing:
-                self.out_socket.sendto(payload.to_bytes(), self.server_address)
-                logging.info('Sent message to server.')
+            with self.outgoing_srv_lock:
+                outgoing = self.outgoing_server.get_entries_not_sent()
+
+            for (addr, payload, _) in outgoing:
+                logging.debug('Sending {} to {}'.format(payload, addr))
+                self.in_socket.sendto(payload.to_bytes(), addr)
 
             # Send messages to the mobile nodes
-            for entry in self.outgoing_mobile.get_entries():
-                # TODO: Requires three changes that I can think of right now.
-                #       1. The payload will need to be changed to include TTL aswell as Sender/Receiver Addresses.
-                #       2. The mobile nodes will need a local cache of nearby nodes, this way they can send messages to their neighbors.
-                #       3. The same ACK system as on gateway.py#192 should be implemented on mobile nodes.
+            outgoing = self.outgoing_mobile.get_entries_not_sent()
 
-                self.out_socket.sendto(entry[1].to_bytes(), entry[0])
+            # get the preferred mobile node
+            out_addr = self._get_preferred_node()
 
-                logging.info('Sent message to mobile node.')
+            for (addr, payload, _) in outgoing:
+                logging.debug('Sending {} to {} through {}.'.format(
+                    payload, addr, out_addr))
+                self.dtn_sock.sendto(payload.to_bytes(), out_addr)
 
-            time.sleep(1)
+            #    # TODO: Requires three changes that I can think of right now.
+            #    #       1. The mobile nodes will need a local cache of nearby nodes, this way they can send messages to their neighbors.
+            #    #       2. The same ACK system as on gateway.py#192 should be implemented on mobile nodes.
+
+            time.sleep(0.033)
 
     def _handle_cache_timeout(self):
         """

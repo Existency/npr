@@ -35,7 +35,7 @@ ptypes = {
     STATE: 'STATE'
 }
 
-pattern: str = '!Bl4s4slB8H8H'
+pattern: str = '!Bl4s4slB16s16s'
 """
     The pattern used to (un)pack the payload.
 

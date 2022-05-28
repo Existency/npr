@@ -24,7 +24,7 @@ Distance = float
 Hops = int
 """The estimated number of hops between two nodes."""
 
-MobileData = Tuple[Distance, Position, Time, Hops]
+MobileMetrics = Tuple[Distance, Position, Time, Hops]
 """
     Distance: The distance between the mobile node and the edge node.
     Position: The (x, y) coordinates of the edge node.
@@ -32,7 +32,7 @@ MobileData = Tuple[Distance, Position, Time, Hops]
     Hops: The number of hops the mobile node's data has made.
 """
 
-MobileMap = Dict[Address, MobileData]
+MobileMap = Dict[Address, MobileMetrics]
 """
     Address: The node's address.
     MobileData: The node's data.
@@ -42,7 +42,7 @@ MobileMap = Dict[Address, MobileData]
 MCAST_GROUP = 'ff15:1234:5678:9101:1121:3141:5161:0001'
 """Used to send and receive multicast messages within the DTN."""
 
-MCAST_PORT = 9586
+MCAST_PORT = 9998
 """Port used by the DTN nodes."""
 
-DEFAULT_PORT = 9099
+DEFAULT_PORT = 9999
