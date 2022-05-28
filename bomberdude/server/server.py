@@ -1,4 +1,3 @@
-from bomberdude.common.types import DEFAULT_PORT
 from common.payload import REJOIN, Payload, ACCEPT, REJECT, JOIN
 from common.uuid import uuid
 from common.core_utils import get_node_ipv6
@@ -8,14 +7,20 @@ from server.lobby import Lobby
 import socket
 from threading import Thread
 import time
-from typing import Tuple
 
 
 class Server(Thread):
     running: bool
+    """Whether the server is running or not."""
+
     sock: socket.socket
+    """The socket used to communicate with the clients."""
+
     lobbies: list[Lobby]
+    """The list of lobbies that are currently running."""
+
     byte_address: bytes
+    """The bytes representation of the server's address"""
 
     def __init__(self, id: str, port: int, level: int):
         """
@@ -174,7 +179,7 @@ class Server(Thread):
             name = inc.data.decode('utf-8') if inc.data != b'' else 'anonymous'
 
             # create a new connection for the client
-            conn = Conn(inc.source, name, int(time.time()))
+            conn = Conn(inc.source, name, time.time())
             # add the connection to the lobby
             lobby.add_player(conn)
             # send the response to the client

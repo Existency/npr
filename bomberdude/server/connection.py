@@ -20,13 +20,28 @@ class Conn:
         logger: The logger for the connection.
     """
     byte_address: bytes
+    """The bytes representation of the address."""
+
     name: str
+    """The name of the connection."""
+
     last_kalive: float
+    """The time of  the last kalive."""
+
     address: Tuple[str, int] = field(init=False)
+    """The address of the client."""
+
     logger: Logger = field(init=False)
+    """The logger for the connection."""
+
     seq_num: int = field(default=0, init=False)
+    """The sequence number of the connection."""
+
     uuid: str = field(init=False)
+    """The unique id of the connection."""
+
     lobby_uuid: str = field(init=False, default='')
+    """The lobby uuid."""
 
     def __hash__(self) -> int:
         """
@@ -68,5 +83,3 @@ class Conn:
 
     def __repr__(self) -> str:
         return self.__str__()
-
-# TODO: implement test suite
