@@ -89,9 +89,10 @@ def get_node_ipv6(id: str) -> Optional[bytes]:
                 ip = element.getElementsByTagName(
                     'address')[0].firstChild.nodeValue
 
+                ip = ip_address(ip).exploded
+
                 # split the ip address
-                ip_parts = ip.split(':')
-                ip_parts = [int(part, 10) for part in ip_parts]
+                ip_parts = [int(part, 10) for part in ip.split(':')]
                 return struct.pack('!8H', *ip_parts)
 
     return None

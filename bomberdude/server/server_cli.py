@@ -31,12 +31,30 @@ class ServerCLI:
             # read input from the user
             cmd = input('> ')
 
-            if cmd == 'exit' or cmd == 'stop' or cmd == 'quit':
+            if cmd == 'exit' or cmd == 'quit':
                 self.logger.info("Termination requested by cli.")
                 self._terminate()
 
             elif cmd == 'status':
                 self._status()
+
+            # if the cmd starts with 'stop' or 'kill'
+            elif cmd.startswith('stop') or cmd.startswith('kill'):
+                # the rest of the cmd is the lobby uuid
+                lobby_uuid = cmd[4:]
+                if lobby_uuid == '':
+                    self.logger.warning("No lobby uuid provided.")
+                    self._help()
+
+                # if the lobby uuid is valid
+                if lobby_uuid in self.srv.lobbies:
+                    # stop the lobby
+                    self.srv.lobbies[lobby_uuid].terminate()
+                    self.srv.lobbies[lobby_uuid].join()
+                    # remove the lobby from the server
+                    del self.srv.lobbies[lobby_uuid]
+
+                    self.logger.info("Lobby %s stopped." % lobby_uuid)
 
             else:
                 self._help()
