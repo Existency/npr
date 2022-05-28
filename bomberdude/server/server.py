@@ -1,3 +1,4 @@
+from bomberdude.common.types import DEFAULT_PORT
 from common.payload import REJOIN, Payload, ACCEPT, REJECT, JOIN
 from common.uuid import uuid
 from common.core_utils import get_node_ipv6
@@ -139,7 +140,7 @@ class Server(Thread):
 
         self.sock.sendto(response.to_bytes(), conn.address)
 
-    def handle_data(self, data: bytes, addr: Tuple[str, int]):
+    def handle_data(self, data: bytes):
         """
         Handle data received from the socket.
 
@@ -150,7 +151,11 @@ class Server(Thread):
         try:
             inc = Payload.from_bytes(data)
 
-            if inc.type not in [JOIN, REJOIN]:
+            if inc is None:
+                logging.error("Invalid payload received.")
+                return
+
+            if inc.type != REJOIN and inc.type != JOIN:
                 logging.info("Received invalid payload: %s", inc)
                 return
 
@@ -169,7 +174,7 @@ class Server(Thread):
             name = inc.data.decode('utf-8') if inc.data != b'' else 'anonymous'
 
             # create a new connection for the client
-            conn = Conn(addr, name, int(time.time()), inc.source)
+            conn = Conn(inc.source, name, int(time.time()))
             # add the connection to the lobby
             lobby.add_player(conn)
             # send the response to the client
@@ -187,7 +192,7 @@ class Server(Thread):
                 data, addr = self.sock.recvfrom(1500)
 
                 logging.debug("Received data from %s: %s", addr, data)
-                self.handle_data(data, addr)
+                self.handle_data(data)
 
             except socket.timeout:
                 logging.debug("Socket read timeout, trying again.")

@@ -15,7 +15,7 @@ from socket import IPPROTO_IPV6, IPPROTO_UDP, IPV6_JOIN_GROUP, IPV6_MULTICAST_HO
 from threading import Thread, Lock
 from typing import List, Optional
 
-from common.payload import ACK, KALIVE, Payload
+from common.payload import KALIVE, Payload
 from common.types import DEFAULT_PORT, MCAST_GROUP, MCAST_PORT, Position, Address, MobileMap
 from common.cache import Cache
 from common.core_utils import get_node_distance, get_node_xy
@@ -318,7 +318,7 @@ class EdgeNode:
                 # Figure whether the message is from the server or from a mobile node
                 if address == self.server_address:
                     # if the message is an ack, remove the data from the outgoing_server cache
-                    if payload.type == ACK:
+                    if payload.is_ack:
                         # the message's destination is the address of the sender of the original message
                         destination = (payload.short_destination, DEFAULT_PORT)
 
@@ -335,7 +335,7 @@ class EdgeNode:
                         payload = self.handle_kalive(address, payload)
 
                     # handle ACK messages
-                    if payload.type == ACK:
+                    if payload.is_ack:
                         destination = (payload.short_destination, DEFAULT_PORT)
 
                         self.outgoing_mobile.purge_entries(

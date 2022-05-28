@@ -1,3 +1,4 @@
+from ipaddress import ip_address
 from common.uuid import uuid
 from dataclasses import dataclass, field
 from logging import Logger
@@ -18,12 +19,12 @@ class Conn:
         seq_num: The sequence number of the connection.
         logger: The logger for the connection.
     """
-    address: Tuple[str, int]
+    byte_address: bytes
     name: str
     last_kalive: float
-    byte_address: bytes
+    address: Tuple[str, int] = field(init=False)
     logger: Logger = field(init=False)
-    seq_num: int = field(default_factory=int)
+    seq_num: int = field(default=0, init=False)
     uuid: str = field(init=False)
     lobby_uuid: str = field(init=False, default='')
 
@@ -43,6 +44,7 @@ class Conn:
         return int(time.time()) - self.last_kalive > 5
 
     def __post_init__(self):
+        self.address = (ip_address(self.byte_address).compressed, 5555)
         self.uuid = uuid()
         self.logger = Logger('Connection {self.uuid}')
         self.logger.info('Connection {self.uuid} init\'d')

@@ -111,11 +111,96 @@ class Payload:
         return ptypes.get(self.type, 'UNKNOWN')
 
     @cached_property
+    def is_accept(self) -> bool:
+        """
+        Checks if the payload has an accept type.
+        """
+        return self.type == ACCEPT
+
+    @cached_property
+    def is_reject(self) -> bool:
+        """
+        Checks if the payload has a reject type.
+        """
+        return self.type == REJECT
+
+    @cached_property
+    def is_join(self) -> bool:
+        """
+        Checks if the payload has a join type.
+        """
+        return self.type == JOIN
+
+    @cached_property
+    def is_rejoin(self) -> bool:
+        """
+        Checks if the payload has a rejoin type.
+        """
+        return self.type == REJOIN
+
+    @cached_property
+    def is_leave(self) -> bool:
+        """
+        Checks if the payload has a leave type.
+        """
+        return self.type == LEAVE
+
+    @cached_property
+    def is_error(self) -> bool:
+        """
+        Checks if the payload has an error type.
+        """
+        return self.type == ERROR
+
+    @cached_property
+    def is_kalive(self) -> bool:
+        """
+        Checks if the payload is a kalive.
+
+        :return: True if the payload has a kalive type.
+        """
+        return self.type == KALIVE
+
+    @cached_property
+    def is_ack(self) -> bool:
+        """
+        Checks if the payload is an ack.
+
+        :return: True if the payload has an ack type.
+        """
+        return self.type == ACK
+
+    @cached_property
+    def is_actions(self) -> bool:
+        """
+        Checks if the payload is an actions.
+
+        :return: True if the payload has an actions type.
+        """
+        return self.type == ACTIONS
+
+    @cached_property
+    def is_state(self) -> bool:
+        """
+        Checks if the payload is a state.
+
+        :return: True if the payload has a state type.
+        """
+        return self.type == STATE
+
+    @cached_property
     def short_destination(self) -> str:
         """
         Retrieves the short representation of the destination.
         """
         return ip_address(self.destination).compressed
+
+    @cached_property
+    def short_source(self) -> str:
+        """
+        Retrieves the short representation of the source.
+        """
+        return ip_address(self.source).compressed
 
     @classmethod
     def from_bytes(cls, data: bytes) -> Payload:

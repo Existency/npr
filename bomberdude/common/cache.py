@@ -91,24 +91,21 @@ class Cache:
                         del self.sent[seq_num]
                         break
 
-    @singledispatchmethod
-    def add_entry(self, seq_num: SeqNum, address: Address, payload: Payload, timestamp: Time):
+    def add_sent_entry(self, seq_num: SeqNum, address: Address, payload: Payload):
         """
-        Add an entry to the cache.
+        Add an entry to the sent cache.
 
         :param seq_num: The sequence number of the entry.
         :param address: The address of the entry.
         :param payload: The payload of the entry.
-        :param timestamp: The timestamp of the entry.
         """
         with self.lock:
             logging.debug(f"Adding entry {seq_num} to cache")
-            self.not_sent[seq_num] = (address, payload, timestamp)
+            self.sent[seq_num] = (address, payload, time.time())
 
-    @add_entry.register
-    def _(self, seq_num: SeqNum, address: Address, payload: Payload):
+    def add_entry(self, seq_num: SeqNum, address: Address, payload: Payload):
         """
-        Add an entry to the cache.
+        Add an entry to the not_sent cache.
 
         :param seq_num: The sequence number of the entry.
         :param address: The address of the entry.
