@@ -45,8 +45,6 @@ class NetClient(Thread):
     out_sock: socket = field(init=False)
     inbound_lock: Lock = field(init=False, default_factory=Lock)
     inbound_queue: InboundQueue = field(init=False, default_factory=list)
-    outbound_lock: Lock = field(init=False, default_factory=Lock)
-    outbound_queue: OutboundQueue = field(init=False, default_factory=list)
     # cache
     outbound: Cache = field(init=False)
     cache_timeout: int = field(default=10)
@@ -373,14 +371,12 @@ class NetClient(Thread):
         This method is used to handle the outbound queue.
         """
         while self.running:
-            actions = []
+            payloads = self.outbound.get_entries_not_sent()
 
-            with self.outbound_lock:
-                actions = self.outbound_queue
-                self.outbound_queue = []
-
-            for action in actions:
-                self.unicast(action[0].to_bytes())
+            for (addr, payload, _) in payloads:
+                logging.debug(
+                    'Sending payload to {}.'.format(addr))
+                self.unicast(payload.to_bytes())
 
             time.sleep(0.03)
 
@@ -435,9 +431,8 @@ class NetClient(Thread):
                 payload = Payload.from_bytes(data)
 
                 if payload.is_redirect:
-                    with self.outbound_lock:
-                        self.outbound_queue.append(
-                            (payload, (payload.short_destination, DEFAULT_PORT)))
+                    self.outbound.add_entry(
+                        payload.seq_num, (payload.short_destination, DEFAULT_PORT), payload)
 
                 if payload.lobby_uuid == self.lobby_uuid and payload.player_uuid == self.player_uuid:
                     # Parse the payload and check whether it's an event or not
