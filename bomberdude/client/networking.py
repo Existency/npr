@@ -337,12 +337,22 @@ class NetClient(Thread):
         # get the gateway node
         (dist, _, _, hops) = self.mobile_map[self.gateway_addr]
 
-        # get the node with the lowest distance to the gateway node
-        for addr, (dist, _, _, hops) in self.mobile_map.items():
-            if dist < dist:
-                return addr
+        distances = [self.mobile_map[addr][0] for addr in self.mobile_map]
 
-        # if no node is found, return the gateway node
+        # get the shortest distance
+        min_dist = min(distances)
+
+        candidates = [
+            addr for addr in self.mobile_map if self.mobile_map[addr][0] == min_dist]
+
+        best_candidate = min(candidates, key=lambda x: self.mobile_map[x][3])
+
+        # if the min_dist is no less than 20% larger than the gateway node and has less hops, return the gateway node
+        if min_dist * 1.2 > dist and self.mobile_map[best_candidate][3] < hops:
+            return best_candidate
+
+        # Important: if the gateway is 1 hop away, always returns the gateway
+
         return self.gateway_addr
 
     def _handle_output_mobile(self):
@@ -355,7 +365,7 @@ class NetClient(Thread):
             payloads = self.outbound.get_entries_not_sent()
 
             # get prefered destination node
-            out_addr = self._get_preferred_node()
+            out_addr = self.preferred_mobile
 
             for (addr, payload, _) in payloads:
                 logging.debug(
