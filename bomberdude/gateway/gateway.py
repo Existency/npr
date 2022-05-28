@@ -11,7 +11,7 @@ import struct
 
 from dataclasses import dataclass, field
 from functools import cached_property
-from socket import IPPROTO_IPV6, IPPROTO_UDP, IPV6_JOIN_GROUP, IPV6_MULTICAST_HOPS, getaddrinfo, socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT, inet_pton, getaddrinfo
+from socket import IPPROTO_IPV6, IPPROTO_UDP, IPV6_JOIN_GROUP, IPV6_MULTICAST_HOPS, getaddrinfo, socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT, inet_pton, getaddrinfo, timeout
 from threading import Thread, Lock
 from typing import List, Optional
 
@@ -59,6 +59,8 @@ class EdgeNode:
     outgoing_server: Cache = field(init=False)
     """Messages meant for the server."""
 
+    preferred_mobile: Address = field(init=False)
+
     # TODO: Use ttl aswell as the coordinates as a metric to determine whether a node is stale.
 
     #       Modify the way broadcasts are made in the mobile nodes (networking.py).
@@ -95,9 +97,9 @@ class EdgeNode:
 
         :return: The data to be send in the KALIVE messages.
         """
-        ip = self.gateway_dtn_address
-        ip_src = struct.pack('!8H', *[int(part, 10)
-                             for part in ip.split(':')])
+
+        ip_src = ip_address(self.gateway_dtn_address).exploded.encode('utf-8')
+        ip_src = struct.pack('!16s', ip_src)
 
         data = bytes(str(self.position[0]) +
                      ',' + str(self.position[1]), 'utf-8')
@@ -105,9 +107,8 @@ class EdgeNode:
         lobby_uuid = ""  # we won't have a lobby_id, this is for DTN purposes
         player_uuid = ""  # we won't have a player_id, this is for DTN purposes
 
-        ip = ip_address(MCAST_GROUP).exploded
-        ip_dest = struct.pack('!8H', *[int(part, 10)
-                              for part in ip.split(':')])
+        ip = ip_address(MCAST_GROUP).exploded.encode('utf-8')
+        ip_dest = struct.pack('!16s', ip)
 
         payload = Payload(KALIVE, data, lobby_uuid,
                           player_uuid, 0, ip_src, ip_dest)
@@ -183,7 +184,7 @@ class EdgeNode:
 
     def handle_kalive(self, addr: Address, payload: Payload) -> Payload:
         """
-        Handles KALIVE messages.
+        Handles KALIVE messages from mobile nodes.
         """
         try:
             # only mobile nodes send data in the KALIVE messages
@@ -200,6 +201,7 @@ class EdgeNode:
                     # update the node's data
                     self.mobile_nodes[addr] = (
                         distance, position, timestamp, hops)
+                    logging.info('Received KALIVE from {}'.format(addr))
         except Exception as e:
             logging.error('Failed to handle KALIVE message: {}'.format(e))
 
@@ -248,19 +250,15 @@ class EdgeNode:
         Handles metric updates.
         """
         while self.running:
-            # Every 3 seconds update the preffered mobile node and set it's address as the default.
-            if time.time() - self.last_update > 3:
+            # Every 5 seconds update the preffered mobile node and set it's address as the default.
+            if time.time() - self.last_update > 5:
                 self.last_update = time.time()
 
                 self.preferred_mobile = self._get_preferred_node()
-
-                self.preferred_mobile_addr = self.preferred_mobile[0]
                 logging.info('Preferred mobile node is {}'.format(
-                    self.preferred_mobile_addr))
+                    self.preferred_mobile[0]))
 
             time.sleep(1)
-
-        pass
 
     def _handle_incoming_dtn(self):
         """
@@ -276,19 +274,17 @@ class EdgeNode:
                 address = (addr[0], addr[1])
 
                 payload = Payload.from_bytes(data)
-                logging.debug(
-                    'Received payload with type {}'.format(payload.type_str))
 
-                if address in self.mobile_nodes:
-                    # update the node's data
-                    self.mobile_nodes[address] = (
-                        self.mobile_nodes[address][0],
-                        self.mobile_nodes[address][1],
-                        time.time(),
-                        self.mobile_nodes[address][3] + 1)
-                else:
-                    pass
+                if payload is None:
+                    logging.warning(
+                        'Received invalid payload from {}.'.format(address))
+                    continue
 
+                if payload.is_kalive:
+                    payload = self.handle_kalive(address, payload)
+
+            except timeout:
+                continue
             except Exception as e:
                 logging.error(
                     'Failed to handle incoming IPv6 message: {}'.format(e))
@@ -330,10 +326,6 @@ class EdgeNode:
                     logging.info('Received message from server.')
 
                 else:
-                    # handle KALIVE messages
-                    if payload.type == KALIVE:
-                        payload = self.handle_kalive(address, payload)
-
                     # handle ACK messages
                     if payload.is_ack:
                         destination = (payload.short_destination, DEFAULT_PORT)
@@ -346,6 +338,9 @@ class EdgeNode:
                             payload.seq_num, address, payload)
                     logging.info(
                         'Received message from mobile node meant for server.')
+
+            except timeout:
+                continue
 
             except Exception as e:
                 logging.error(e)
@@ -364,18 +359,18 @@ class EdgeNode:
                 outgoing = self.outgoing_server.get_entries_not_sent()
 
             for (addr, payload, _) in outgoing:
-                logging.debug('Sending {} to {}'.format(payload, addr))
+                logging.debug('Sending payload to {}'.format(addr))
                 self.out_socket.sendto(payload.to_bytes(), addr)
 
             # Send messages to the mobile nodes
             outgoing = self.outgoing_mobile.get_entries_not_sent()
 
             # get the preferred mobile node
-            out_addr = self._get_preferred_node()
+            out_addr = self.preferred_mobile
 
             for (addr, payload, _) in outgoing:
-                logging.debug('Sending {} to {} through {}.'.format(
-                    payload, addr, out_addr))
+                logging.debug(
+                    'Sending payload to {} through {}.'.format(addr, out_addr))
                 self.out_socket.sendto(payload.to_bytes(), out_addr)
 
             # TODO: Requires two changes that I can think of right now.

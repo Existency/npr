@@ -2,15 +2,16 @@ from __future__ import annotations
 from common.state import Change, GameState, change_from_bytes, parse_payload
 from functools import cached_property
 from ipaddress import ip_address
-from common.core_utils import get_node_xy
-from common.payload import ACTIONS, KALIVE, REJOIN, STATE, Payload, ACCEPT, LEAVE, JOIN, REDIRECT, REJECT
+from common.core_utils import get_node_distance, get_node_xy
+from common.payload import ACK, KALIVE, REJOIN, Payload, ACCEPT, LEAVE, JOIN, REJECT
+from common.cache import Cache
 from dataclasses import dataclass, field
 import logging
 import time
 import struct
 from typing import Tuple, List
 from threading import Thread, Lock
-from socket import socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, timeout, INADDR_ANY
+from socket import socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, timeout, IPPROTO_IPV6, IPV6_MULTICAST_HOPS
 import json
 from common.types import DEFAULT_PORT, Address, MobileMap, Position
 
@@ -33,7 +34,8 @@ class NetClient(Thread):
     port: int
     npath: str
     byte_address: bytes
-    level: int = field(default=logging.INFO)
+    gateway_addr: Address
+    log_level: int = field(default=logging.INFO)
     slock: Lock = field(init=False, default_factory=Lock)
     is_mobile: bool = field(default=False)
     gamestate: GameState = field(init=False)
@@ -45,6 +47,10 @@ class NetClient(Thread):
     inbound_queue: InboundQueue = field(init=False, default_factory=list)
     outbound_lock: Lock = field(init=False, default_factory=Lock)
     outbound_queue: OutboundQueue = field(init=False, default_factory=list)
+    # cache
+    outbound: Cache = field(init=False)
+    cache_timeout: int = field(default=10)
+
     running: bool = field(init=False, default=False)
     player_id: int = field(init=False, default=0)
     started: bool = field(init=False, default=False)
@@ -54,6 +60,17 @@ class NetClient(Thread):
     seq_num: int = field(init=False, default=0)
     # This only exists in mobile clients
     mobile_map: MobileMap = field(init=False)
+    preferred_mobile: Address = field(init=False)
+
+    @cached_property
+    def msender(self) -> socket:
+        """
+        The socket through which the gateway node sends messages to the DTN.
+        """
+        ttl = struct.pack('@I', 3)
+        sock = socket(AF_INET6, SOCK_DGRAM)
+        sock.setsockopt(IPPROTO_IPV6, IPV6_MULTICAST_HOPS, ttl)
+        return sock
 
     def __hash__(self) -> int:
         return super().__hash__()
@@ -61,9 +78,11 @@ class NetClient(Thread):
     def __post_init__(self):
         super(NetClient, self).__init__()
         self.gamestate = GameState(self.slock, {}, {})
-        #self.cur_pos = get_node_xy(self.npath)
+        self.outbound = Cache(self.cache_timeout, self.log_level)
+        self.preferred_mobile = self.gateway_addr
+
         logging.basicConfig(
-            level=self.level, format='%(levelname)s: %(message)s')
+            level=self.log_level, format='%(levelname)s: %(message)s')
 
         logging.info('Client init\'d')
 
@@ -298,9 +317,35 @@ class NetClient(Thread):
 
         This method is used to automatically update the prefered destination node.
         """
+        last_update = time.time()
         while self.running:
+            if time.time() - last_update > 5:
+                # Every 5 seconds update the preffered mobile node and set it's address as the default.
+                last_update = time.time()
 
-            time.sleep(0.1)
+                self.preferred_mobile = self._get_preferred_node()
+                logging.info('Preferred mobile node is {}'.format(
+                    self.preferred_mobile[0]))
+
+            time.sleep(1)
+
+    def _get_preferred_node(self) -> Address:
+        """
+        Returns a node.
+
+        :return: The node with the lowest distance to the gateway node aswell as a low number of hops.
+        """
+
+        # get the gateway node
+        (dist, _, _, hops) = self.mobile_map[self.gateway_addr]
+
+        # get the node with the lowest distance to the gateway node
+        for addr, (dist, _, _, hops) in self.mobile_map.items():
+            if dist < dist:
+                return addr
+
+        # if no node is found, return the gateway node
+        return self.gateway_addr
 
     def _handle_output_mobile(self):
         """
@@ -309,17 +354,17 @@ class NetClient(Thread):
         This method is used to handle the output queue in a mobile context.
         """
         while self.running:
-            packets = []
+            payloads = self.outbound.get_entries_not_sent()
 
-            with self.slock:
-                packets = self.outbound_queue
-                self.outbound_queue = []
+            # get prefered destination node
+            out_addr = self._get_preferred_node()
 
-            for packet in packets:
-                # TODO: Define a proper way to handle the packet sending.
-                pass
+            for (addr, payload, _) in payloads:
+                logging.debug(
+                    'Sending payload to {} through {}.'.format(addr, out_addr))
+                self.out_sock.sendto(payload.to_bytes(), out_addr)
 
-            time.sleep(0.03)
+            time.sleep(0.1)
 
     def _handle_output_wired(self):
         """
@@ -339,23 +384,57 @@ class NetClient(Thread):
 
             time.sleep(0.03)
 
+    def _handle_dtn_input(self):
+        """
+        Method shouldn't be called directly from outside the class.
+
+        Handles the data received from the DTN network.
+        """
+
+        while self.running:
+            try:
+                data, addr = self.msender.recvfrom(1500)
+
+                address = (addr[0], addr[1])
+                payload = Payload.from_bytes(data)
+
+                if payload is None:
+                    logging.warning(
+                        'Received invalid payload from {}.'.format(address))
+                    continue
+
+                if payload.is_kalive:
+                    _x, _y = payload.data.decode('utf-8').split(',')
+                    position = (float(_x), float(_y))
+                    hops = 3 - payload.ttl
+                    timestamp = time.time()
+                    distance = get_node_distance(position, self.location)
+
+                    self.mobile_map[address] = (
+                        distance, position, timestamp, hops)
+
+            except timeout:
+                continue
+            except Exception as e:
+                logging.error(e)
+                continue
+
     def _handle_input(self):
         """
         Method shouldn't be called directly from outside the class.
 
         Handles the data received from a remote host.
-        This data is converted to a Payload object and then handled.
         """
         while self.running:
             try:
-                data, addr = self.in_sock.recvfrom(1500)
+                data, _ = self.in_sock.recvfrom(1500)
 
                 if len(data) < 50:
                     continue
 
                 payload = Payload.from_bytes(data)
 
-                if payload.type == REDIRECT:
+                if payload.is_redirect:
                     with self.outbound_lock:
                         self.outbound_queue.append(
                             (payload, (payload.short_destination, DEFAULT_PORT)))
@@ -364,31 +443,35 @@ class NetClient(Thread):
                     # Parse the payload and check whether it's an event or not
                     # if it's a game event, add it to the queue_inbound
                     # if it's not, pass it to the queue_message
-                    if payload.type == KALIVE:
-                       # logging.info('Received KALIVE.')
+                    if payload.is_kalive:
                         self.last_kalive = time.time()
 
-                    elif payload.type == ACTIONS:
-
+                    elif payload.is_actions:
                         changes = change_from_bytes(payload.data)
 
                         if changes is not None:
                             with self.inbound_lock:
                                 self.queue_inbound.extend(changes)
 
-                    elif payload.type == STATE and self.started == False:
+                        # Ack the payload
+                        ack_payload = Payload(ACK, b'', self.lobby_uuid, self.player_uuid,
+                                              payload.seq_num, self.byte_address, self.lobby_byte_address)
+
+                        self.outbound.add_entry(
+                            payload.seq_num, (payload.short_source, DEFAULT_PORT), ack_payload)
+
+                    elif payload.is_state and self.started == False:
                         # update the client's state and set the started flag to true
                         state = json.loads(payload.data.decode('utf-8'))
                         if state['uuid'] == self.player_uuid:
                             self.started = True
                             self.start_time = state['time']
                             self.player_id = state['id']
-                            #print('dealing with boxes',state['boxes'])
+                            # print('dealing with boxes',state['boxes'])
                             self.gamestate.boxes = state['boxes']
 
             except timeout:
-                logging.info('Socket recv timed out.')
-
+                continue
             except Exception as e:
                 logging.warning('Invalid payload received: %s',
                                 e.__str__())
@@ -407,6 +490,8 @@ class NetClient(Thread):
         logging.info('Input handler started.')
 
         if self.is_mobile:
+            Thread(target=self._handle_dtn_input).start()
+            logging.info('DTN input handler started.')
             Thread(target=self._broadcast_kalive_mobile).start()
             logging.info('Kalive (mobile) handler started.')
             Thread(target=self._handle_output_mobile).start()

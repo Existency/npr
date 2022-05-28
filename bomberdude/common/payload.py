@@ -47,8 +47,8 @@ pattern: str = '!Bl4s4slB16s16s'
     - 4s: The player's uuid.            (4 bytes)
     - l: The payload's seqnum.          (4 bytes)
     - B: The payload's ttl.             (1 byte)
-    - 8H: The payload's source.         (16 bytes)
-    - 8H: The payload's destination.    (16 bytes)
+    - 16s: The payload's source.         (16 bytes)
+    - 16s: The payload's destination.    (16 bytes)
     ----------------------------------------------
     Total:                               50 bytes
 """
@@ -144,6 +144,13 @@ class Payload:
         Checks if the payload has a leave type.
         """
         return self.type == LEAVE
+
+    @cached_property
+    def is_redirect(self) -> bool:
+        """
+        Checks if the payload has a redirect type.
+        """
+        return self.type == REDIRECT
 
     @cached_property
     def is_error(self) -> bool:
