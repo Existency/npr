@@ -99,18 +99,6 @@ class Cache:
             logging.debug(f"Adding entry {seq_num} to cache")
             self.not_sent[seq_num] = (address, payload, time.time())
 
-    # add multiple entries at once
-    def add_entries(self, entries: List[Tuple[SeqNum, Address, Payload, Time]]):
-        """
-        Add multiple entries to the cache.
-
-        :param entries: A tuple list containing seqnum, address, payload and time.
-        """
-        with self.lock:
-            for seq_num, address, payload, timestamp in entries:
-                logging.debug(f"Adding entry {seq_num} to cache")
-                self.not_sent[seq_num] = (address, payload, timestamp)
-
     @singledispatchmethod
     def get_entries_not_sent(self, address: Address) -> List[CacheEntry]:
         """
