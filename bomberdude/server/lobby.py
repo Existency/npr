@@ -7,7 +7,6 @@ from common.payload import ACK, ACTIONS, KALIVE, STATE, Payload
 from common.state import Change, bytes_from_changes, change_from_bytes
 from common.cache import Cache
 from dataclasses import dataclass, field
-from functools import singledispatchmethod
 import logging
 from socket import socket, timeout
 from threading import Thread, Lock
@@ -101,7 +100,6 @@ class Lobby(Thread):
         logging.info('Added conn to lobby, %s', conn.__str__())
         return True
 
-    @singledispatchmethod
     def get_player(self, addr: Tuple[str, int]) -> Optional[Conn]:
         """
         Gets a conn from the lobby.
@@ -113,8 +111,7 @@ class Lobby(Thread):
                 return c
         return None
 
-    @get_player.register
-    def _(self, uuid: str) -> Optional[Conn]:
+    def get_player_by_uuid(self, uuid: str) -> Optional[Conn]:
         """
         Gets a conn from the lobby.
 
@@ -227,7 +224,7 @@ class Lobby(Thread):
                 payload = Payload.from_bytes(data)
                 logging.info('Received payload, %s', payload.type_str)
                 # get the conn that sent the data
-                conn = self.get_player(payload.player_uuid)
+                conn = self.get_player_by_uuid(payload.player_uuid)
 
                 if conn is None:
                     # TODO: Change this later for NDN redirect support
