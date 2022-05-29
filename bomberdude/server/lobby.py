@@ -237,7 +237,7 @@ class Lobby(Thread):
                 # handle ACKs as these might have an invalid seq_num
                 if payload.is_ack:
                     self.outbound.purge_entries(
-                        payload.seq_num, payload.short_source)
+                        payload.seq_num, (payload.short_source, DEFAULT_PORT))
                     continue
 
                     # If the payload's sequence number is equal or older than the current one, discard

@@ -1,6 +1,5 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from functools import singledispatchmethod
 from threading import Lock
 from typing import List, Tuple, Dict
 import logging
@@ -49,17 +48,7 @@ class Cache:
                     logging.debug(
                         f"Purging entry {seq_num} meant for {addr} from cache")
 
-    @singledispatchmethod
-    def purge_entries(self):
-        """
-        Purge all entries from the cache.
-        """
-        with self.lock:
-            logging.info(f"Purging all entries from cache")
-            self.sent.clear()
-
-    @purge_entries.register
-    def _(self, seq_num: SeqNum, address: Address):
+    def purge_entries(self, seq_num: SeqNum, address: Address):
         """
         Purge a specific entry from the cache.
 
@@ -99,10 +88,9 @@ class Cache:
             logging.debug(f"Adding entry {seq_num} to cache")
             self.not_sent[seq_num] = (address, payload, time.time())
 
-    @singledispatchmethod
-    def get_entries_not_sent(self, address: Address) -> List[CacheEntry]:
+    def get_entries_not_sent(self) -> List[CacheEntry]:
         """
-        Get all entries from a specific address.
+        Get all entries that weren't sent.
 
         :param address: The address to get entries from.
         :return: A list of entries.
@@ -111,33 +99,13 @@ class Cache:
             entries = []
             for seq_num, (addr, payload, time) in self.not_sent.items():
                 # move the entry to the sent cache and append it to the list
-                if addr == address:
-                    logging.debug(f"Getting entry {seq_num} from cache")
-                    self.sent[seq_num] = (addr, payload, time)
-                    entries.append((addr, payload, time))
-                    del self.not_sent[seq_num]
-            return entries
-
-    @get_entries_not_sent.register
-    def _(self) -> List[CacheEntry]:
-        """
-        Get all entries from all addresses.
-
-        :return: A list of entries.
-        """
-        # get all entries in the dictionary as a list
-        entries = []
-        with self.lock:
-            # move the values to the sent cache
-            for seq_num, (addr, payload, time) in self.not_sent.items():
                 logging.debug(f"Getting entry {seq_num} from cache")
                 self.sent[seq_num] = (addr, payload, time)
                 entries.append((addr, payload, time))
                 del self.not_sent[seq_num]
-        return entries
+            return entries
 
-    @singledispatchmethod
-    def get_entries_sent(self, address: Address) -> List[CacheEntry]:
+    def get_entries_sent_by(self, address: Address) -> List[CacheEntry]:
         """
         Get all entries from a specific address.
 
@@ -152,8 +120,7 @@ class Cache:
                     entries.append((addr, payload, time))
             return entries
 
-    @get_entries_sent.register
-    def _(self) -> List[CacheEntry]:
+    def get_entries_sent(self) -> List[CacheEntry]:
         """
         Get all entries from all addresses.
 

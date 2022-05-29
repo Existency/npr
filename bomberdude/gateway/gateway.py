@@ -386,7 +386,7 @@ class EdgeNode:
         If a message has timed out, it is removed from the cache.
         """
         while self.running:
-            self.outgoing_mobile.purge_entries()
+            self.outgoing_mobile.purge_all_expired()
             time.sleep(self.cache_timeout)
 
     def run(self):
