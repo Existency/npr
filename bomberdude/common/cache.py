@@ -75,22 +75,6 @@ class Cache:
                     del self.sent[seq_num]
                     break
 
-    @purge_entries.register
-    def _(self, seq_nums: List[SeqNum], address: Address):
-        """
-        Purge a set of entries from the cache.
-
-        :param seq_nums: The sequence numbers of the entries to purge.
-        :param address: The address of the entries to purge.
-        """
-        with self.lock:
-            for seq_num in seq_nums:
-                for seq_num, (addr, _, _) in self.sent.items():
-                    if seq_num == seq_num and addr == address:
-                        logging.debug(f"Purging entry {seq_num} from cache")
-                        del self.sent[seq_num]
-                        break
-
     def add_sent_entry(self, seq_num: SeqNum, address: Address, payload: Payload):
         """
         Add an entry to the sent cache.
