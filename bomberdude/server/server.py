@@ -139,6 +139,7 @@ class Server(Thread):
         :param lobby: The lobby the player joined.
         """
         data = lobby.port.to_bytes(2, 'big')
+        print(conn.byte_address)
 
         response = Payload(ACCEPT, data, lobby.uuid, conn.uuid,
                            0, self.byte_address, conn.byte_address)
@@ -177,6 +178,8 @@ class Server(Thread):
             # get a name from the payload's data or 'anonymous' if no name was given
             # TODO: This should be better handled. No sanitization is done here!
             name = inc.data.decode('utf-8') if inc.data != b'' else 'anonymous'
+
+            print(inc.source)
 
             # create a new connection for the client
             conn = Conn(inc.source, name, time.time())

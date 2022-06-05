@@ -136,7 +136,7 @@ class NetClient(Thread):
         out_sock.bind(('', self.port+1))
         out_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         out_sock.settimeout(2)
-
+        print(self.byte_address)
         payload = Payload(JOIN, b'', lobby_id, '',
                           self.seq_num, self.byte_address, self.byte_address)
 

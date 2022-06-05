@@ -222,7 +222,7 @@ class Payload:
             type, length, lobby, player, seq_num, ttl, source, destination = struct.unpack(
                 pattern, header)
 
-            return cls(type, data[OFFSET: length+OFFSET], lobby.decode(), player.decode(), seq_num, ttl, source, destination)
+            return cls(type, data[OFFSET: length+OFFSET], lobby.decode(), player.decode(), seq_num, source, destination, ttl)
 
         except Exception as e:
             raise ValueError(e.__repr__())
