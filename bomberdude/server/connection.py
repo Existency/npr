@@ -6,6 +6,7 @@ from logging import Logger
 from socket import socket
 from typing import Tuple
 import time
+import struct
 
 
 @dataclass
@@ -60,7 +61,12 @@ class Conn:
         return int(time.time()) - self.last_kalive > 5
 
     def __post_init__(self):
-        self.address = (ip_address(self.byte_address).compressed, DEFAULT_PORT)
+        test2 = struct.unpack('!8H',self.byte_address)
+        string_ints = [str(int) for int in test2]
+        test2 = ':'.join(string_ints)
+
+        self.address = (ip_address(test2).compressed, DEFAULT_PORT)
+        print("Connection self.address",self.address)
         self.uuid = uuid()
         self.logger = Logger('Connection {self.uuid}')
         self.logger.info('Connection {self.uuid} init\'d')

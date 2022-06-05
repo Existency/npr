@@ -51,6 +51,10 @@ class NetClient(Thread):
     """The socket used to receive data."""
     out_sock: socket = field(init=False)
     """The socket used to send data."""
+
+    queue_inbound: List[Payload] = field(
+    init=False, default_factory=list)
+
     # cache
     client_cache: Cache = field(init=False)
     """Cache used to store the last sent payloads."""
@@ -133,7 +137,9 @@ class NetClient(Thread):
         out_sock.bind(('', DEFAULT_PORT+1))
         out_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         out_sock.settimeout(2)
+
         print(self.byte_address)
+
         payload = Payload(JOIN, b'', lobby_id, '',
                           self.seq_num, self.byte_address, self.byte_address)
 
@@ -141,6 +147,7 @@ class NetClient(Thread):
                                 '', self.seq_num, self.byte_address, self.byte_address)
         retry_bytes = retry_payload.to_bytes()
         self.seq_num = + 1
+        print("address: ",self.auth_ip)
         in_sock.sendto(payload.to_bytes(), self.auth_ip)
 
         _try = 0

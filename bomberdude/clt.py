@@ -40,6 +40,7 @@ if __name__ == '__main__':
         print("Node's ipv6 not found")
         exit(1)
 
+    print("node_ipv6",node_ipv6)
     pymenu = Client(args, node_path, node_ipv6)
     pymenu.start_game()
 

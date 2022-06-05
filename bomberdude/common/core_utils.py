@@ -45,6 +45,8 @@ def get_node_xy(path: str) -> Position:
         content = f.read()
         # split the line into two parts
         coords = content.split(',')
+        coords = content.split(' ')
+        print("coords",coords)
         # return the xy coordinates
         return (float(coords[0]), float(coords[1]))
 
@@ -90,9 +92,13 @@ def get_node_ipv6(id: str) -> Optional[bytes]:
                     'address')[0].firstChild.nodeValue
 
                 ip = ip_address(ip).exploded
+                print("IP",ip)
 
                 # split the ip address
                 ip_parts = [int(part, 10) for part in ip.split(':')]
+                test = struct.pack('!8H', *ip_parts)
+                test2 = struct.unpack('!8H',test)
+                print('test2 ',test2)
                 return struct.pack('!8H', *ip_parts)
 
     return None
