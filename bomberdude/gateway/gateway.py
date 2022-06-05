@@ -35,9 +35,6 @@ class EdgeNode:
     gateway_dtn_address: str
     """The address used to interact with the DTN"""
 
-    port: int = field(default=9191)
-    """The port to listen on."""
-
     cache_timeout: int = field(default=20)
     """Cache timeout in seconds."""
 
@@ -133,7 +130,7 @@ class EdgeNode:
         in_sock = socket(AF_INET6, SOCK_DGRAM)
         in_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         in_sock.setsockopt(SOL_SOCKET, SO_REUSEPORT, 1)
-        in_sock.bind(('', self.port))
+        in_sock.bind(('', DEFAULT_PORT))
         in_sock.settimeout(2)
         return in_sock
 
@@ -145,7 +142,7 @@ class EdgeNode:
         out_sock = socket(AF_INET6, SOCK_DGRAM)
         out_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         out_sock.setsockopt(SOL_SOCKET, SO_REUSEPORT, 1)
-        out_sock.bind(('', self.port))
+        out_sock.bind(('', DEFAULT_PORT))
         out_sock.settimeout(2)
         return out_sock
 

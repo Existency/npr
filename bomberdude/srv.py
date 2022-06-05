@@ -10,7 +10,6 @@ if __name__ == '__main__':
     """
     parser = argparse.ArgumentParser(description='Bomberdude server.')
     parser.add_argument('--id', type=str, required=True,)
-    parser.add_argument('-p', '--port', type=int, default=8080,)
     parser.add_argument('-l', '--level', type=str, default='info',)
     args = parser.parse_args()
 
@@ -24,5 +23,5 @@ if __name__ == '__main__':
     else:
         log_lvl = INFO
 
-    srv = ServerCLI(args.port, log_lvl, args.id)
+    srv = ServerCLI(log_lvl, args.id)
     srv.start()

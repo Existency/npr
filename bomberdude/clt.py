@@ -11,12 +11,10 @@ if __name__ == '__main__':
     Start the bomberdude server.
     """
     parser = argparse.ArgumentParser(description='Bomberdude server.')
-    parser.add_argument('-p', '--port', type=int, default=8090,)
     parser.add_argument('-n', '--name', type=str, default='anonymous')
     parser.add_argument('-a', '--address', type=str, default='::1')
     parser.add_argument('-i', '--id', type=str, default='')
     parser.add_argument('-l', '--level', type=str, default='info',)
-    #parser.add_argument('-nid', '--node', type=str, required=True)
 
     args = parser.parse_args()
 
@@ -32,7 +30,7 @@ if __name__ == '__main__':
 
     # get node's path
     node_path = get_node_path(args.id)
-    
+
     if node_path is None:
         print("Node's path not found")
         exit(1)

@@ -11,11 +11,11 @@ class ServerCLI:
     run: bool
     logger: Logger
 
-    def __init__(self, port: int, level: int, id: str):
+    def __init__(self, level: int, id: str):
         """
         Initialize the socket server.
         """
-        self.srv = Server(id, port, level)
+        self.srv = Server(id, level)
         self.run = False
         self.logger = Logger("Server CLI", level=level)
         self.logger.info("Starting CLI.")

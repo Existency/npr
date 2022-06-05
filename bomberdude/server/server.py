@@ -1,3 +1,4 @@
+from common.types import DEFAULT_PORT
 from common.payload import REJOIN, Payload, ACCEPT, REJECT, JOIN
 from common.uuid import uuid
 from common.core_utils import get_node_ipv6
@@ -22,7 +23,7 @@ class Server(Thread):
     byte_address: bytes
     """The bytes representation of the server's address"""
 
-    def __init__(self, id: str, port: int, level: int):
+    def __init__(self, id: str, level: int):
         """
         Initialize the socket server.
         """
@@ -30,7 +31,7 @@ class Server(Thread):
         self.running = True
         self.lobbies = []
         self.sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
-        self.sock.bind(('', port))
+        self.sock.bind(('', DEFAULT_PORT))
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.setblocking(False)
         self.sock.settimeout(2)

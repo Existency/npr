@@ -1,5 +1,7 @@
 import pygame
 import pygame_menu
+
+from common.types import DEFAULT_PORT
 from .algorithm import Algorithm
 from .networking import NetClient
 from .game import game_init
@@ -30,7 +32,7 @@ class Client:
 
     def __init__(self, args, node_path, node_ipv6):
         self.args = args
-        self.cli = NetClient((self.args.address, 8080), self.args.port,
+        self.cli = NetClient((self.args.address, DEFAULT_PORT),
                              node_path=node_path, byte_address=node_ipv6)
 
     def change_player(self, value, c):

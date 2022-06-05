@@ -33,9 +33,6 @@ class NetClient(Thread):
 
     auth_ip: Address
     """The server's address."""
-    port: int
-    # TODO: Remove this property
-    """The port used by the client. Soon to be deprecated in favour of DEFAULT_PORT."""
     node_path: str
     """The node's path in the filesystem."""
     byte_address: bytes
@@ -128,12 +125,12 @@ class NetClient(Thread):
         :param lobby_id: The lobby ID to join.
         """
         in_sock = socket(AF_INET6, SOCK_DGRAM)
-        in_sock.bind(('', self.port))
+        in_sock.bind(('', DEFAULT_PORT))
         in_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         in_sock.settimeout(2)
 
         out_sock = socket(AF_INET6, SOCK_DGRAM)
-        out_sock.bind(('', self.port+1))
+        out_sock.bind(('', DEFAULT_PORT+1))
         out_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         out_sock.settimeout(2)
         print(self.byte_address)
@@ -237,7 +234,7 @@ class NetClient(Thread):
 
         :param data: The data to be broadcasted.
         """
-        self.out_sock.sendto(data, ('ff02::1', self.port))
+        self.out_sock.sendto(data, ('ff02::1', DEFAULT_PORT))
 
     def unicast(self, data: bytes):
         """
