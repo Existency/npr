@@ -352,6 +352,10 @@ class NetClient(Thread):
         # get the gateway node
         (dist, _, _, hops) = self.mobile_map[self.gateway_addr]
 
+        # Important: if the gateway is 1 hop away, always returns the gateway
+        if hops == 3:
+            return self.gateway_addr
+
         distances = [self.mobile_map[addr][0] for addr in self.mobile_map]
 
         # get the shortest distance
@@ -363,10 +367,8 @@ class NetClient(Thread):
         best_candidate = min(candidates, key=lambda x: self.mobile_map[x][3])
 
         # if the min_dist is no less than 20% larger than the gateway node and has less hops, return the gateway node
-        if min_dist * 1.2 > dist and self.mobile_map[best_candidate][3] < hops:
+        if min_dist * 1.2 > dist and self.mobile_map[best_candidate][3] >= hops:
             return best_candidate
-
-        # Important: if the gateway is 1 hop away, always returns the gateway
 
         return self.gateway_addr
 
