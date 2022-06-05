@@ -237,6 +237,12 @@ class Payload:
         lobby_bytes = bytes(self.lobby_uuid, 'utf-8')
         player_bytes = bytes(self.player_uuid, 'utf-8')
 
+        # print the type of pattern, lobby_bytes, player_bytes
+        print(type(pattern))
+        print(type(lobby_bytes), type(player_bytes))
+        print(type(self.destination), type(self.source))
+        print(type(self.data))
+
         return struct.pack(
             pattern,
             self.type,
