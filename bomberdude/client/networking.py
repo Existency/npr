@@ -335,17 +335,12 @@ class NetClient(Thread):
 
         This method is used to automatically update the prefered destination node.
         """
-        last_update = time.time()
         while self.running:
-            if time.time() - last_update > 5:
-                # Every 5 seconds update the preffered mobile node and set it's address as the default.
-                last_update = time.time()
-
-                self.preferred_mobile = self._get_preferred_node()
-                logging.info('Preferred mobile node is {}'.format(
-                    self.preferred_mobile[0]))
-
-            time.sleep(1)
+            time.sleep(5)
+            # Every 5 seconds update the preffered mobile node and set it's address as the default.
+            self.preferred_mobile = self._get_preferred_node()
+            logging.info('Preferred mobile node is {}'.format(
+                self.preferred_mobile[0]))
 
     def _get_preferred_node(self) -> Address:
         """
