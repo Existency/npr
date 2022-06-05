@@ -31,12 +31,13 @@ if __name__ == '__main__':
         log_lvl = INFO
 
     # get node's path
-    node_path = get_node_path(args.node)
+    node_path = get_node_path(args.id)
+    
     if node_path is None:
         print("Node's path not found")
         exit(1)
 
-    node_ipv6 = get_node_ipv6(args.node)
+    node_ipv6 = get_node_ipv6(args.id)
     if node_ipv6 is None:
         print("Node's ipv6 not found")
         exit(1)
