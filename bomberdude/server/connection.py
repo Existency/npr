@@ -1,4 +1,5 @@
 from ipaddress import ip_address
+from common.types import DEFAULT_PORT
 from common.uuid import uuid
 from dataclasses import dataclass, field
 from logging import Logger
@@ -59,7 +60,7 @@ class Conn:
         return int(time.time()) - self.last_kalive > 5
 
     def __post_init__(self):
-        self.address = (ip_address(self.byte_address).compressed, 5555)
+        self.address = (ip_address(self.byte_address).compressed, DEFAULT_PORT)
         self.uuid = uuid()
         self.logger = Logger('Connection {self.uuid}')
         self.logger.info('Connection {self.uuid} init\'d')
