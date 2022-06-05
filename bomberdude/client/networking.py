@@ -30,35 +30,59 @@ class NetClient(Thread):
     :param remote: The remote address to connect to.
     :param port: The port to connect to.
     """
-    auth_ip: Address
-    port: int
-    npath: str
-    byte_address: bytes
-    gateway_addr: Address
-    log_level: int = field(default=logging.INFO)
-    slock: Lock = field(init=False, default_factory=Lock)
-    is_mobile: bool = field(default=False)
-    gamestate: GameState = field(init=False)
-    lobby_uuid: str = field(default='')
-    player_uuid: str = field(default='')
-    in_sock: socket = field(init=False)
-    out_sock: socket = field(init=False)
-    inbound_lock: Lock = field(init=False, default_factory=Lock)
-    inbound_queue: InboundQueue = field(init=False, default_factory=list)
-    # cache
-    outbound: Cache = field(init=False)
-    cache_timeout: int = field(default=10)
 
+    auth_ip: Address
+    """The server's address."""
+    port: int
+    # TODO: Remove this property
+    """The port used by the client. Soon to be deprecated in favour of DEFAULT_PORT."""
+    node_path: str
+    """The node's path in the filesystem."""
+    byte_address: bytes
+    """The byte representation of the client's address."""
+    log_level: int = field(default=logging.INFO)
+    """The logging level this client will use."""
+    state_lock: Lock = field(init=False, default_factory=Lock)
+    """Game state shared lock."""
+    gamestate: GameState = field(init=False)
+    """The client's game state. This is used to draw the game for the player and to synchronize the game state with others."""
+    lobby_uuid: str = field(default='')
+    """The lobby's uuid."""
+    player_uuid: str = field(default='')
+    """The player's uuid."""
+    in_sock: socket = field(init=False)
+    """The socket used to receive data."""
+    out_sock: socket = field(init=False)
+    """The socket used to send data."""
+    # cache
+    client_cache: Cache = field(init=False)
+    """Cache used to store the last sent payloads."""
+    cache_timeout: int = field(default=10)
+    """The timeout, in seconds, for cache entries to be removed."""
     running: bool = field(init=False, default=False)
+    """Whether the client is running."""
     player_id: int = field(init=False, default=0)
-    started: bool = field(init=False, default=False)
-    last_kalive: float = field(init=False, default=0.0)
-    lobby_ip: Address = field(init=False)
+    """The player's in-game id. Used to determine it's starting position."""
     start_time: float = field(init=False, default=0.0)
+    """Game start time."""
+    started: bool = field(init=False, default=False)
+    """Whether a game is currently in progress."""
+    last_kalive: float = field(init=False, default=0.0)
+    """The time of the last KALIVE message."""
+    lobby_addr: Address = field(init=False)
+    """The lobby's address."""
     seq_num: int = field(init=False, default=0)
+    """Sequence number for the client"""
+
     # This only exists in mobile clients
     mobile_map: MobileMap = field(init=False)
+    """Information related to other mobile nodes"""
     preferred_mobile: Address = field(init=False)
+    """The preferred mobile node to send data to."""
+    is_mobile: bool = field(default=False)
+    """Whether this client is a mobile node."""
+    gateway_addr: Address = field(init=False, default=('', 0))
+    """The gateway's address. This property is used by mobile nodes only."""
 
     @cached_property
     def msender(self) -> socket:
@@ -75,31 +99,27 @@ class NetClient(Thread):
 
     def __post_init__(self):
         super(NetClient, self).__init__()
-        self.gamestate = GameState(self.slock, {}, {})
-        self.outbound = Cache(self.cache_timeout, self.log_level)
-        self.preferred_mobile = self.gateway_addr
+        self.gamestate = GameState(self.state_lock, {}, {})
+        self.client_cache = Cache(self.cache_timeout, self.log_level)
+
+        if self.is_mobile:
+            # if gateway_addr is not set, this is an error
+            if self.gateway_addr == ('', 0):
+                logging.error("Gateway address not set on mobile node.")
+                exit(1)
+            self.preferred_mobile = self.gateway_addr
 
         logging.basicConfig(
             level=self.log_level, format='%(levelname)s: %(message)s')
 
         logging.info('Client init\'d')
 
-    @ property
-    def messages(self) -> list:
-        """
-        Method used to get messages tuples from the queue.
-        """
-        with self.inbound_lock:
-            inbound: list = self.inbound_queue
-            self.inbound_queue = []
-            return inbound
-
     @property
     def location(self) -> Position:
         """
         Method used to get the current location of the client.
         """
-        return get_node_xy(self.npath)
+        return get_node_xy(self.node_path)
 
     def join_server(self, lobby_id: str):
         """
@@ -152,7 +172,7 @@ class NetClient(Thread):
                             data.data, byteorder='big')
                         logging.info('New lobby port: %d', lobby_port)
 
-                        self.lobby_ip = (self.auth_ip[0], lobby_port)
+                        self.lobby_addr = (self.auth_ip[0], lobby_port)
                         self.in_sock = in_sock
                         self.out_sock = out_sock
 
@@ -192,7 +212,7 @@ class NetClient(Thread):
         Returns the byte address of the lobby.
         """
         return struct.pack('!8H', *[int(part, 10)
-                                    for part in ip_address(self.lobby_ip[0]).exploded.split(':')])
+                                    for part in ip_address(self.lobby_addr[0]).exploded.split(':')])
 
     def reset(self):
         """
@@ -203,7 +223,7 @@ class NetClient(Thread):
         self.gamestate.reset()
         self.lobby_uuid = ''
         self.player_uuid = ''
-        self.lobby_ip = ('', 0)
+        self.lobby_addr = ('', 0)
         self.player_id = 0
         self.last_kalive = 0.0
         self.running = False
@@ -226,7 +246,7 @@ class NetClient(Thread):
         :param data: The payload to be sent.
         """
         # print(self.seq_num)
-        sent = self.out_sock.sendto(data, self.lobby_ip)
+        sent = self.out_sock.sendto(data, self.lobby_addr)
         logging.debug('Sent %d bytes to server', sent)
 
     def _handle_state(self):
@@ -247,7 +267,7 @@ class NetClient(Thread):
             while self.in_game:
                 _incoming_changes = []
 
-                with self.slock:
+                with self.state_lock:
                     _incoming_changes = self.queue_inbound
                     self.queue_inbound = []
                 for change in _incoming_changes:
@@ -362,7 +382,7 @@ class NetClient(Thread):
         This method is used to handle the output queue in a mobile context.
         """
         while self.running:
-            payloads = self.outbound.get_entries_not_sent()
+            payloads = self.client_cache.get_entries_not_sent()
 
             # get prefered destination node
             out_addr = self.preferred_mobile
@@ -381,7 +401,7 @@ class NetClient(Thread):
         This method is used to handle the outbound queue.
         """
         while self.running:
-            payloads = self.outbound.get_entries_not_sent()
+            payloads = self.client_cache.get_entries_not_sent()
 
             for (addr, payload, _) in payloads:
                 logging.debug(
@@ -441,7 +461,7 @@ class NetClient(Thread):
                 payload = Payload.from_bytes(data)
 
                 if payload.is_redirect:
-                    self.outbound.add_entry(
+                    self.client_cache.add_entry(
                         payload.seq_num, (payload.short_destination, DEFAULT_PORT), payload)
 
                 if payload.lobby_uuid == self.lobby_uuid and payload.player_uuid == self.player_uuid:
@@ -455,14 +475,13 @@ class NetClient(Thread):
                         changes = change_from_bytes(payload.data)
 
                         if changes is not None:
-                            with self.inbound_lock:
-                                self.queue_inbound.extend(changes)
+                            self.queue_inbound.extend(changes)
 
                         # Ack the payload
                         ack_payload = Payload(ACK, b'', self.lobby_uuid, self.player_uuid,
                                               payload.seq_num, self.byte_address, self.lobby_byte_address)
 
-                        self.outbound.add_entry(
+                        self.client_cache.add_entry(
                             payload.seq_num, (payload.short_source, DEFAULT_PORT), ack_payload)
 
                     elif payload.is_state and self.started == False:
@@ -501,7 +520,6 @@ class NetClient(Thread):
             logging.info('Kalive (mobile) handler started.')
             Thread(target=self._handle_output_mobile).start()
             logging.info('Output (mobile) handler started.')
-
             Thread(target=self._handle_metrics_update).start()
             logging.info('Metrics update handler started.')
 
@@ -511,8 +529,14 @@ class NetClient(Thread):
             Thread(target=self._handle_output_wired).start()
             logging.info('Output (wired) handler started.')
 
-        while self.running:
-            time.sleep(0.1)
+        # main loop, if we're mobile purge cache every X seconds
+        if self.is_mobile:
+            while self.running:
+                time.sleep(self.cache_timeout)
+                self.client_cache.purge_timeout()
+        else:
+            while self.running:
+                time.sleep(1)
 
     def leave(self):
         """
