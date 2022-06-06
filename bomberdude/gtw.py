@@ -11,7 +11,6 @@ if __name__ == '__main__':
     Start the bomberdude server.
     """
     parser = argparse.ArgumentParser(description='Bomberdude server.')
-    parser.add_argument('-n', '--name', type=str, default='anonymous')
     parser.add_argument('-a', '--address', type=str, default='::1')
     parser.add_argument('-i', '--id', type=str, default='')
     parser.add_argument('-l', '--level', type=str, default='info',)
