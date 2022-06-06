@@ -22,7 +22,7 @@ from common.core_utils import get_node_distance, get_node_xy
 
 
 @dataclass
-class EdgeNode:
+class EdgeNode(Thread):
     """
     gateway node for the DTN network.
     """
@@ -32,7 +32,7 @@ class EdgeNode:
     node_path: str
     """The node's system path (CORE related)."""
 
-    gateway_dtn_address: str
+    gateway_dtn_address: bytes
     """The address used to interact with the DTN"""
 
     cache_timeout: int = field(default=20)
