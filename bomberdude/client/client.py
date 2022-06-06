@@ -30,10 +30,15 @@ class Client:
     en3_alg = Algorithm.DIJKSTRA
     show_path = True
 
-    def __init__(self, args, node_path, node_ipv6):
+    def __init__(self, args, node_path, node_ipv6: bytes, gateway_addr: str | None = None):
         self.args = args
-        self.cli = NetClient((self.args.address, DEFAULT_PORT),
-                             node_path=node_path, byte_address=node_ipv6)
+
+        if gateway_addr is None:
+            self.cli = NetClient((self.args.address, DEFAULT_PORT),
+                                 node_path=node_path, byte_address=node_ipv6)
+        else:
+            self.cli = NetClient((self.args.address, DEFAULT_PORT),
+                                 node_path=node_path, byte_address=node_ipv6, gateway_addr=(gateway_addr, DEFAULT_PORT))
 
     def change_player(self, value, c):
         #global player_alg

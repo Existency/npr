@@ -82,7 +82,7 @@ class NetClient(Thread):
     """The preferred mobile node to send data to."""
     is_mobile: bool = field(default=False)
     """Whether this client is a mobile node."""
-    gateway_addr: Address = field(init=False, default=('', 0))
+    gateway_addr: Address = field(default=('', 0))
     """The gateway's address. This property is used by mobile nodes only."""
 
     @cached_property

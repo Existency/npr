@@ -12,9 +12,10 @@ if __name__ == '__main__':
     """
     parser = argparse.ArgumentParser(description='Bomberdude server.')
     parser.add_argument('-n', '--name', type=str, default='anonymous')
-    parser.add_argument('-a', '--address', type=str, default='::1')
-    parser.add_argument('-i', '--id', type=str, default='')
+    parser.add_argument('-a', '--address', type=str, required=True)
+    parser.add_argument('-i', '--id', type=str, required=True)
     parser.add_argument('-l', '--level', type=str, default='info',)
+    parser.add_argument('-g', '--gateway', type=str, required=True)
 
     args = parser.parse_args()
 
@@ -40,7 +41,7 @@ if __name__ == '__main__':
         print("Node's ipv6 not found")
         exit(1)
 
-    print("node_ipv6",node_ipv6)
+    print("node_ipv6", node_ipv6)
     pymenu = Client(args, node_path, node_ipv6)
     pymenu.start_game()
 
