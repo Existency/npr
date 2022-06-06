@@ -357,7 +357,7 @@ def sendAction(cli,action,x,y):
     print('sent action',data)
     cli.seq_num += 1
     payload = Payload(ACTIONS, data.to_bytes(), cli.lobby_uuid,
-                    cli.player_uuid, cli.seq_num)
+                    cli.player_uuid, cli.seq_num,cli.byte_address,cli.auth_ip)
     
     cli.unicast(payload.to_bytes())
     

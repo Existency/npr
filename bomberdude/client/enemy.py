@@ -42,9 +42,10 @@ class Enemy:
         
 
         data = Change((int(x/4),int(y/4),self.cli.player_id+9),(int(move_x/4),int(move_y/4),tile_id))
+        
         self.cli.seq_num += 1
         payload = Payload(ACTIONS, data.to_bytes(), self.cli.lobby_uuid,
-                        self.cli.player_uuid, self.cli.seq_num)
+                        self.cli.player_uuid, self.cli.seq_num,self.cli.byte_address,self.cli.auth_ip)
         
         self.cli.unicast(payload.to_bytes())
 
