@@ -11,7 +11,7 @@ import time
 import struct
 from typing import Tuple, List
 from threading import Thread, Lock
-from socket import socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, timeout, IPPROTO_IPV6, IPV6_MULTICAST_HOPS
+from socket import socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, timeout, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, inet_pton
 import json
 from common.types import DEFAULT_PORT, Address, MobileMap, Position
 
@@ -53,7 +53,7 @@ class NetClient(Thread):
     """The socket used to send data."""
 
     queue_inbound: List[Payload] = field(
-    init=False, default_factory=list)
+        init=False, default_factory=list)
 
     # cache
     client_cache: Cache = field(init=False)
@@ -147,7 +147,7 @@ class NetClient(Thread):
                                 '', self.seq_num, self.byte_address, self.byte_address)
         retry_bytes = retry_payload.to_bytes()
         self.seq_num = + 1
-        print("address: ",self.auth_ip)
+        print("address: ", self.auth_ip)
         in_sock.sendto(payload.to_bytes(), self.auth_ip)
 
         _try = 0
@@ -215,8 +215,8 @@ class NetClient(Thread):
         """
         Returns the byte address of the lobby.
         """
-        return struct.pack('!8H', *[int(part, 10)
-                                    for part in ip_address(self.lobby_addr[0]).exploded.split(':')])
+        # use inet_pton
+        return inet_pton(AF_INET6, self.lobby_addr[0])
 
     def reset(self):
         """
@@ -288,8 +288,8 @@ class NetClient(Thread):
 
         This message is used to broadcast the kalive to the server in a mobile context.
         """
-        byte_address = struct.pack('!8H', *[int(part, 10)
-                                            for part in ip_address('ff02::1').exploded.split(':')])
+        # use inet_pton to convert "ff02::1" to bytes
+        byte_address = inet_pton(AF_INET6, "ff02::1")
 
         # mobile clients
         while self.running:

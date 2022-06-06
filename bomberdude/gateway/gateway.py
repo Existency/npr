@@ -95,17 +95,22 @@ class EdgeNode:
         :return: The data to be send in the KALIVE messages.
         """
 
-        ip_src = ip_address(self.gateway_dtn_address).exploded.encode('utf-8')
-        ip_src = struct.pack('!16s', ip_src)
+        ip_src = ip_address(self.gateway_dtn_address).exploded
+        ip_src = inet_pton(AF_INET6, ip_src)
+
+        ip_dest = ip_address(MCAST_GROUP).exploded
+        ip_dest = inet_pton(AF_INET6, ip_dest)
+
+        # ip_src = ip_address(self.gateway_dtn_address).exploded.encode('utf-8')
+        # ip_src = struct.pack('!16s', ip_src)
+        # ip = ip_address(MCAST_GROUP).exploded.encode('utf-8')
+        # ip_dest = struct.pack('!16s', ip)
 
         data = bytes(str(self.position[0]) +
                      ',' + str(self.position[1]), 'utf-8')
 
         lobby_uuid = ""  # we won't have a lobby_id, this is for DTN purposes
         player_uuid = ""  # we won't have a player_id, this is for DTN purposes
-
-        ip = ip_address(MCAST_GROUP).exploded.encode('utf-8')
-        ip_dest = struct.pack('!16s', ip)
 
         payload = Payload(KALIVE, data, lobby_uuid,
                           player_uuid, 0, ip_src, ip_dest)

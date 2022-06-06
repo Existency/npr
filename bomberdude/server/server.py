@@ -8,7 +8,6 @@ from server.lobby import Lobby
 import socket
 from threading import Thread
 import time
-import struct
 
 
 class Server(Thread):
@@ -38,7 +37,7 @@ class Server(Thread):
         self.sock.settimeout(2)
 
         tmp = get_node_ipv6(id)
-        print("node_ipv6",tmp)
+        print("node_ipv6", tmp)
 
         if tmp is not None:
             self.byte_address = tmp
@@ -142,12 +141,11 @@ class Server(Thread):
         :param lobby: The lobby the player joined.
         """
         data = lobby.port.to_bytes(2, 'big')
-      
 
         response = Payload(ACCEPT, data, lobby.uuid, conn.uuid,
                            0, self.byte_address, conn.byte_address)
 
-        print("address",conn.address)
+        print("address", conn.address)
         self.sock.sendto(response.to_bytes(), conn.address)
 
     def handle_data(self, data: bytes):
@@ -182,7 +180,7 @@ class Server(Thread):
             # get a name from the payload's data or 'anonymous' if no name was given
             # TODO: This should be better handled. No sanitization is done here!
             name = inc.data.decode('utf-8') if inc.data != b'' else 'anonymous'
-            
+
             print("Source address bytes: ", str(inc.source))
             # create a new connection for the client
             conn = Conn(inc.source, name, time.time())

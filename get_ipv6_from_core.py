@@ -1,9 +1,9 @@
+from socket import AF_INET, AF_INET6, inet_pton
 from xml.dom import minidom
 from os import listdir
 from os.path import isdir, join
 from typing import Optional
 from ipaddress import ip_address
-import struct
 
 
 def get_node_ipv6(id: str):
@@ -47,13 +47,8 @@ print('The original IPv6 address is: ' + ip)
 
 # split the ip address
 
-packed_ip = struct.pack('!8H', *[int(part, 10) for part in ip.split(':')])
+packed_ip = inet_pton(AF_INET6, ip)
 
 print('The packed ip is: {!r}'.format(packed_ip))
 print('The number of bytes is: {}'.format(len(packed_ip)))
 print('Type of packed_ip is: {}'.format(type(packed_ip)))
-
-ip_dest = struct.pack('!8H', *[int(part, 16)
-                               for part in ip_address('ff02::1').exploded.split(':')])
-
-print('The packed ip is: {!r}'.format(ip_dest))
