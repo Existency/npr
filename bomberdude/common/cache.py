@@ -4,6 +4,7 @@ from threading import Lock
 from typing import List, Tuple, Dict
 import logging
 import time
+from copy import copy
 from .payload import Payload
 from .types import Address, SeqNum, Time
 
@@ -97,7 +98,7 @@ class Cache:
         """
         with self.lock:
             entries = []
-            for seq_num, (addr, payload, time) in self.not_sent.items():
+            for seq_num, (addr, payload, time) in self.not_sent.copy().items():
                 # move the entry to the sent cache and append it to the list
                 logging.debug(f"Getting entry {seq_num} from cache")
                 self.sent[seq_num] = (addr, payload, time)
