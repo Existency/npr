@@ -56,7 +56,7 @@ class EdgeNode(Thread):
     outgoing_server: Cache = field(init=False)
     """Messages meant for the server."""
 
-    preferred_mobile: Address = field(init=False)
+    preferred_mobile: Optional[Address] = field(init=False, default=None)
 
     # TODO: Use ttl aswell as the coordinates as a metric to determine whether a node is stale.
 
@@ -310,6 +310,9 @@ class EdgeNode(Thread):
 
                 address = (addr[0], addr[1])
 
+                if self.preferred_mobile is None:
+                    self.preferred_mobile = address
+
                 payload = Payload.from_bytes(data)
                 logging.debug(
                     'Received payload with type: {}'.format(payload.type_str))
@@ -353,6 +356,9 @@ class EdgeNode(Thread):
         """
         Handles the outgoing messages.
         """
+
+        while self.preferred_mobile is None:
+            time.sleep(0.01)
 
         while self.running:
             # Send messages to the server
