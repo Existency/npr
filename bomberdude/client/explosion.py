@@ -23,7 +23,7 @@ class Explosion:
         
         self.cli.seq_num += 1
         payload = Payload(ACTIONS, bytes_from_changes(list_changes), self.cli.lobby_uuid,
-                        self.cli.player_uuid, self.cli.seq_num,self.cli.byte_address,self.cli.auth_ip)
+                        self.cli.player_uuid, self.cli.seq_num,self.cli.byte_address,self.cli.byte_address)
         
         self.cli.unicast(payload.to_bytes())
         
