@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
-from bomberdude.common.types import DEFAULT_PORT
+from common.types import DEFAULT_PORT
 from gateway.gateway import EdgeNode
 from common.core_utils import get_node_ipv6, get_node_path
 from logging import INFO, DEBUG, ERROR, WARNING
