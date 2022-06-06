@@ -68,7 +68,7 @@ class EdgeNode(Thread):
         return super().__hash__()
 
     def __post_init__(self):
-        Thread.__init__(self)
+        super(EdgeNode, self).__init__()
         logging.basicConfig(
             level=self.level, format='%(levelname)s: %(message)s')
 
