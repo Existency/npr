@@ -13,7 +13,7 @@ from typing import Tuple, List
 from threading import Thread, Lock
 from socket import socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, timeout, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, inet_pton
 import json
-from common.types import DEFAULT_PORT, Address, MobileMap, Position
+from common.types import DEFAULT_PORT, Address, MobileMap, MobileMetrics, Position
 
 InboundQueue = List[Change]
 """A list of changes to be applied to the game state."""
@@ -84,6 +84,8 @@ class NetClient(Thread):
     """Whether this client is a mobile node."""
     gateway_addr: Address = field(default=('', 0))
     """The gateway's address. This property is used by mobile nodes only."""
+    gateway_map: MobileMap = field(init=False)
+    """Information about all the gateways in the network."""
 
     @cached_property
     def msender(self) -> socket:
@@ -121,6 +123,35 @@ class NetClient(Thread):
         Method used to get the current location of the client.
         """
         return get_node_xy(self.node_path)
+
+    @property
+    def closest_gateway(self) -> Tuple[Address, MobileMetrics]:
+        """
+        Returns the closest gateway to the client from the gateway map.
+        """
+        # recalculate and update each gateway's distance to the client
+        for (addr, metrics) in self.gateway_map.items():
+            self.gateway_map[addr] = self.gateway_update(metrics)
+
+        closest = min(self.gateway_map.items(), key=lambda x: x[1][0])
+
+        return (closest[0], closest[1])
+
+    @cached_property
+    def lobby_byte_address(self) -> bytes:
+        """
+        Returns the byte address of the lobby.
+        """
+        # use inet_pton
+        return inet_pton(AF_INET6, self.lobby_addr[0])
+
+    def gateway_update(self, metrics: MobileMetrics) -> MobileMetrics:
+        """
+        Updates the gateway's distance to the client.
+        """
+        (_, pos, time, hops) = metrics
+        dist = get_node_distance(self.location, pos)
+        return (dist, pos, time, hops)
 
     def join_server(self, lobby_id: str):
         """
@@ -209,14 +240,6 @@ class NetClient(Thread):
                 in_sock.sendto(retry_bytes, self.auth_ip)
 
             time.sleep(0.25)
-
-    @cached_property
-    def lobby_byte_address(self) -> bytes:
-        """
-        Returns the byte address of the lobby.
-        """
-        # use inet_pton
-        return inet_pton(AF_INET6, self.lobby_addr[0])
 
     def reset(self):
         """
@@ -352,13 +375,16 @@ class NetClient(Thread):
 
         :return: The node with the lowest distance to the gateway node aswell as a low number of hops.
         """
+        # get the closest gateway to our node
+        (gateway_addr, (dist, _, _, hops)) = self.closest_gateway
 
         # get the gateway node
-        (dist, _, _, hops) = self.mobile_map[self.gateway_addr]
+        # (dist, _, _, hops) = self.mobile_map[self.gateway_addr]
 
-        # Important: if the gateway is 1 hop away, always returns the gateway
+        # Important: if we're connected directly to the gateway,
+        #               we want to use it as a preferred node.
         if hops == 3:
-            return self.gateway_addr
+            return gateway_addr
 
         distances = [self.mobile_map[addr][0] for addr in self.mobile_map]
 
@@ -374,7 +400,7 @@ class NetClient(Thread):
         if min_dist * 1.2 > dist and self.mobile_map[best_candidate][3] >= hops:
             return best_candidate
 
-        return self.gateway_addr
+        return gateway_addr
 
     def _handle_output_mobile(self):
         """
@@ -429,6 +455,16 @@ class NetClient(Thread):
                     logging.warning(
                         'Received invalid payload from {}.'.format(address))
                     continue
+
+                if payload.is_gkalive:
+                    _x, _y = payload.data.decode('utf-8').split(',')
+                    position = (float(_x), float(_y))
+                    hops = 3 - payload.ttl
+                    timestamp = time.time()
+                    distance = get_node_distance(position, self.location)
+
+                    self.gateway_map[address] = (
+                        distance, position, timestamp, hops)
 
                 if payload.is_kalive:
                     _x, _y = payload.data.decode('utf-8').split(',')

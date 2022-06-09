@@ -16,7 +16,8 @@ REDIRECT = 0x06  # TODO: Deprecate this functionality.
 ERROR = 0xA0
 # Utility types
 KALIVE = 0xC0
-ACK = 0xC1
+GKALIVE = 0xC1  # gateway keepalive
+ACK = 0xC2
 # Game types
 ACTIONS = 0xD0
 STATE = 0xD1
@@ -30,6 +31,7 @@ ptypes = {
     REDIRECT: 'REDIRECT',  # TODO: Deprecate this functionality.
     ERROR: 'ERROR',
     KALIVE: 'KALIVE',
+    GKALIVE: 'GKALIVE',
     ACK: 'ACK',
     ACTIONS: 'ACTIONS',
     STATE: 'STATE'
@@ -160,6 +162,13 @@ class Payload:
         return self.type == ERROR
 
     @cached_property
+    def is_gkalive(self) -> bool:
+        """
+        Checks if the payload has a gateway keepalive type.
+        """
+        return self.type == GKALIVE
+
+    @cached_property
     def is_kalive(self) -> bool:
         """
         Checks if the payload is a kalive.
@@ -238,10 +247,10 @@ class Payload:
         player_bytes = bytes(self.player_uuid, 'utf-8')
 
         # print the type of pattern, lobby_bytes, player_bytes
-        #print(type(pattern))
+        # print(type(pattern))
         #print(type(lobby_bytes), type(player_bytes))
         #print(type(self.destination), type(self.source))
-        #print(type(self.data))
+        # print(type(self.data))
 
         return struct.pack(
             pattern,

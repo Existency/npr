@@ -13,9 +13,9 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from socket import IPPROTO_IPV6, IPPROTO_UDP, IPV6_JOIN_GROUP, IPV6_MULTICAST_HOPS, getaddrinfo, socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT, inet_pton, getaddrinfo, timeout
 from threading import Thread, Lock
-from typing import List, Optional
+from typing import Optional
 
-from common.payload import KALIVE, Payload
+from common.payload import GKALIVE, Payload
 from common.types import DEFAULT_PORT, MCAST_GROUP, MCAST_PORT, Position, Address, MobileMap
 from common.cache import Cache
 from common.core_utils import get_node_distance, get_node_xy
@@ -113,7 +113,7 @@ class EdgeNode(Thread):
         lobby_uuid = ""  # we won't have a lobby_id, this is for DTN purposes
         player_uuid = ""  # we won't have a player_id, this is for DTN purposes
 
-        payload = Payload(KALIVE, data, lobby_uuid,
+        payload = Payload(GKALIVE, data, lobby_uuid,
                           player_uuid, 0, ip_src, ip_dest)
 
         return payload.to_bytes()
@@ -266,8 +266,6 @@ class EdgeNode(Thread):
     def _handle_incoming_dtn(self):
         """
         Handles incoming IPv6 messages.
-
-
         """
         while self.running:
             try:
@@ -410,6 +408,7 @@ class EdgeNode(Thread):
         Thread(target=self._handle_outgoing).start()
         logging.info('Handle outgoing thread started')
         Thread(target=self._handle_cache_timeout).start()
+        
 
         # Keep the main thread alive
         while self.running:
