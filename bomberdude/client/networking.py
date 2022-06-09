@@ -295,7 +295,9 @@ class NetClient(Thread):
         while self.running:
             # check whether last kalive from server was more than 5 seconds ago
             if time.time() - self.last_kalive > 5:
+                
                 logging.warning('Server not responding...')
+                
 
             location = self.location
 

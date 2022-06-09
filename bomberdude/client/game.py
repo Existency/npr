@@ -423,6 +423,13 @@ def main(cli):
 
         update_bombs(cli,dt)
     game_over(cli)
+    
+def check_timeout(cli):
+    if time.time() - cli.last_kalive > 5:
+        print('Timed Out')
+        for e in enemy_list:
+            e.life = False
+        player.life = False
 
 def sync_boxes(cli):
     state_boxes = cli.gamestate.boxes.keys()
@@ -437,6 +444,7 @@ def sync_boxes(cli):
     
 
 def update_bombs(cli,dt):
+    check_timeout(cli)
     for b in bombs:
         b.update(dt)
         if b.time < 1:
@@ -486,6 +494,7 @@ def game_over(cli):
             if en.life:
                 count += 1
                 winner = en.algorithm.name
+        
         if count == 1:
             draw()
             textsurface = font.render(winner + " wins", False, (0, 0, 0))
@@ -505,10 +514,11 @@ def game_over(cli):
             time.sleep(2)
             break
         draw()
+        
+        cli.terminate('Game Over')
 
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
                 sys.exit(0)
-    explosions.clear()
-    enemy_list.clear()
-    ene_blocks.clear()
+                
+
