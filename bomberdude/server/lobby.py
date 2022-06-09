@@ -222,7 +222,7 @@ class Lobby(Thread):
 
                 # parse the data
                 payload = Payload.from_bytes(data)
-                logging.info('Received payload, %s', payload.type_str)
+                #logging.info('Received payload, %s', payload.type_str)
                 # get the conn that sent the data
                 conn = self.get_player_by_uuid(payload.player_uuid)
 
@@ -334,6 +334,16 @@ class Lobby(Thread):
                 with self.game_state_lock:
                     _incoming_changes = self.action_queue_inbound
                     self.action_queue_inbound = []
+                    
+                for c in self.conns:
+                    if c.timed_out:
+                        self.remove_player(c)
+                        id = _out[c]['id']
+                        lobby_uuid = _out[c]['uuid']
+                        data = Change((0,0,id+9),(0,0,id + 109))
+                        print('killed player',id)
+                        payload.seq_num += 1
+                        _incoming_changes.append(Payload(ACTIONS, data.to_bytes(), lobby_uuid, id, payload.seq_num, self.byte_address, payload.source))
 
                 # Unpack all incoming changes
                 for payload in _incoming_changes:
@@ -387,10 +397,6 @@ class Lobby(Thread):
         # every 1 second send a kalive to all conns
         while self.running:
             time.sleep(1)
-
-            for c in self.conns:
-                if c.timed_out:
-                    self.remove_player(c)
 
             # if no one is connected, stop the lobby
             if len(self.conns) == 0:
