@@ -252,6 +252,11 @@ class EdgeNode(Thread):
         """
         Handles metric updates.
         """
+        
+        while self.preferred_mobile is None:
+            time.sleep(0.01)
+        
+        self.last_update = time.time()
         while self.running:
             # Every 5 seconds update the preffered mobile node and set it's address as the default.
             if time.time() - self.last_update > 5:
@@ -272,8 +277,7 @@ class EdgeNode(Thread):
         while self.running:
             try:
                 data, addr = self.dtn_sock.recvfrom(1500)
-                print('Is this working?')
-                logging.info('Received {} from {}'.format(data, addr))
+                logging.info('Received from {}'.format(addr))
 
                 address = (addr[0], addr[1])
 
@@ -413,6 +417,8 @@ class EdgeNode(Thread):
         Thread(target=self._handle_cache_timeout).start()
         logging.info('Handle incoming dtn thread started')
         Thread(target=self._handle_incoming_dtn).start()
+        logging.info('Handle metrics thread started')
+        Thread(target=self._handle_metric_updates).start()
         
 
         # Keep the main thread alive

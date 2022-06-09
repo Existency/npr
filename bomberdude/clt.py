@@ -15,7 +15,7 @@ if __name__ == '__main__':
     parser.add_argument('-a', '--address', type=str, required=True)
     parser.add_argument('-i', '--id', type=str, required=True)
     parser.add_argument('-l', '--level', type=str, default='info',)
-    parser.add_argument('-g', '--gateway', type=str, required=True)
+    parser.add_argument('-g', '--gateway', type=str)
 
     args = parser.parse_args()
 
