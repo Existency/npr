@@ -515,7 +515,7 @@ def game_over(cli):
             break
         draw()
         
-        cli.terminate('Game Over')
+        #cli.terminate('Game Over')
 
         for e in pygame.event.get():
             if e.type == pygame.QUIT:

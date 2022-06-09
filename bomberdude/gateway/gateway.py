@@ -180,7 +180,7 @@ class EdgeNode(Thread):
         """
 
         while self.running:
-            logging.info('Broadcasting KALIVE')
+            #logging.info('Broadcasting KALIVE')
             # TODO: Requires all mobiles nodes to use the same port? Check this.
             self.msender.sendto(self.kalive, self.mcast_addr)
             time.sleep(1)
@@ -272,6 +272,7 @@ class EdgeNode(Thread):
         while self.running:
             try:
                 data, addr = self.dtn_sock.recvfrom(1500)
+                print('Is this working?')
                 logging.info('Received {} from {}'.format(data, addr))
 
                 address = (addr[0], addr[1])
@@ -410,6 +411,9 @@ class EdgeNode(Thread):
         Thread(target=self._handle_outgoing).start()
         logging.info('Handle outgoing thread started')
         Thread(target=self._handle_cache_timeout).start()
+        logging.info('Handle incoming dtn thread started')
+        Thread(target=self._handle_incoming_dtn).start()
+        
 
         # Keep the main thread alive
         while self.running:
