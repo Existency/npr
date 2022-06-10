@@ -521,7 +521,7 @@ class NetClient(Thread):
                                               payload.seq_num, self.byte_address, self.lobby_byte_address)
 
                         self.client_cache.add_entry(
-                            payload.seq_num, (payload.short_source, DEFAULT_PORT), ack_payload)
+                            (payload.short_source, DEFAULT_PORT), ack_payload)
 
                     elif payload.is_state and self.started == False:
                         # update the client's state and set the started flag to true
