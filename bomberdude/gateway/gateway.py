@@ -97,10 +97,7 @@ class EdgeNode(Thread):
         """
 
         ip_src = ip_address(self.gateway_dtn_address).exploded
-        ip_src = inet_pton(AF_INET6, ip_src)
-
         ip_dest = ip_address(MCAST_GROUP).exploded
-        ip_dest = inet_pton(AF_INET6, ip_dest)
 
         # ip_src = ip_address(self.gateway_dtn_address).exploded.encode('utf-8')
         # ip_src = struct.pack('!16s', ip_src)
@@ -114,7 +111,7 @@ class EdgeNode(Thread):
         player_uuid = ""  # we won't have a player_id, this is for DTN purposes
 
         payload = Payload(GKALIVE, data, lobby_uuid,
-                          player_uuid, 0, ip_src, ip_dest)
+                          player_uuid, 0, inet_pton(AF_INET6, ip_src), inet_pton(AF_INET6, ip_dest))
 
         return payload.to_bytes()
 
@@ -252,10 +249,10 @@ class EdgeNode(Thread):
         """
         Handles metric updates.
         """
-        
+
         while self.preferred_mobile is None:
             time.sleep(0.01)
-        
+
         self.last_update = time.time()
         while self.running:
             # Every 5 seconds update the preffered mobile node and set it's address as the default.
@@ -327,11 +324,10 @@ class EdgeNode(Thread):
                         # the message's destination is the address of the sender of the original message
                         destination = (payload.short_destination, DEFAULT_PORT)
 
-                        self.outgoing_server.purge_entries(
-                            payload.seq_num, destination)
+                        self.outgoing_server.purge_entry(
+                            destination, payload)
 
-                    self.outgoing_mobile.add_entry(
-                        payload.seq_num, address, payload)
+                    self.outgoing_mobile.add_entry(address, payload)
                     logging.info('Received message from server.')
 
                 else:
@@ -339,12 +335,12 @@ class EdgeNode(Thread):
                     if payload.is_ack:
                         destination = (payload.short_destination, DEFAULT_PORT)
 
-                        self.outgoing_mobile.purge_entries(
-                            payload.seq_num, destination)
+                        self.outgoing_mobile.purge_entry(
+                            destination, payload)
 
                     with self.outgoing_srv_lock:
                         self.outgoing_server.add_entry(
-                            payload.seq_num, address, payload)
+                            address, payload)
                     logging.info(
                         'Received message from mobile node meant for server.')
 
@@ -370,7 +366,7 @@ class EdgeNode(Thread):
             with self.outgoing_srv_lock:
                 outgoing = self.outgoing_server.get_entries_not_sent()
 
-            for (addr, payload, _) in outgoing:
+            for (addr, payload) in outgoing:
                 logging.debug('Sending payload to {}'.format(addr))
                 self.out_socket.sendto(payload.to_bytes(), addr)
 
@@ -380,7 +376,7 @@ class EdgeNode(Thread):
             # get the preferred mobile node
             out_addr = self.preferred_mobile
 
-            for (addr, payload, _) in outgoing:
+            for (addr, payload) in outgoing:
                 logging.debug(
                     'Sending payload to {} through {}.'.format(addr, out_addr))
                 self.out_socket.sendto(payload.to_bytes(), out_addr)
@@ -417,7 +413,6 @@ class EdgeNode(Thread):
         Thread(target=self._handle_incoming_dtn).start()
         logging.info('Handle metrics thread started')
         Thread(target=self._handle_metric_updates).start()
-        
 
         # Keep the main thread alive
         while self.running:
@@ -436,14 +431,14 @@ class EdgeNode(Thread):
         outgoing_mobile = self.outgoing_mobile.get_entries_not_sent() + \
             self.outgoing_mobile.get_entries_sent()
 
-        for (_, payload, _) in outgoing_server:
+        for (_, payload) in outgoing_server:
             logging.debug('Sending {} to {}'.format(
                 payload, self.server_address))
             self.out_socket.sendto(payload.to_bytes(), self.server_address)
 
         out_addr = self._get_preferred_node()
 
-        for (addr, payload, _) in outgoing_mobile:
+        for (addr, payload) in outgoing_mobile:
             logging.debug('Sending {} to {} through {}.'.format(
                 payload, addr, out_addr))
             self.out_socket.sendto(payload.to_bytes(), out_addr)

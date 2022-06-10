@@ -272,7 +272,6 @@ class NetClient(Thread):
 
         :param data: The payload to be sent.
         """
-        # print(self.seq_num)
         sent = self.out_sock.sendto(data, self.lobby_addr)
         logging.debug('Sent %d bytes to server', sent)
 
@@ -318,9 +317,8 @@ class NetClient(Thread):
         while self.running:
             # check whether last kalive from server was more than 5 seconds ago
             if time.time() - self.last_kalive > 5:
-                
+
                 logging.warning('Server not responding...')
-                
 
             location = self.location
 
@@ -416,7 +414,7 @@ class NetClient(Thread):
             # get prefered destination node
             out_addr = self.preferred_mobile
 
-            for (addr, payload, _) in payloads:
+            for (addr, payload) in payloads:
                 logging.debug(
                     'Sending payload to {} through {}.'.format(addr, out_addr))
                 self.out_sock.sendto(payload.to_bytes(), out_addr)
@@ -432,7 +430,7 @@ class NetClient(Thread):
         while self.running:
             payloads = self.client_cache.get_entries_not_sent()
 
-            for (addr, payload, _) in payloads:
+            for (addr, payload) in payloads:
                 logging.debug(
                     'Sending payload to {}.'.format(addr))
                 self.unicast(payload.to_bytes())
@@ -501,7 +499,7 @@ class NetClient(Thread):
 
                 if payload.is_redirect:
                     self.client_cache.add_entry(
-                        payload.seq_num, (payload.short_destination, DEFAULT_PORT), payload)
+                        (payload.short_destination, DEFAULT_PORT), payload)
 
                 if payload.lobby_uuid == self.lobby_uuid and payload.player_uuid == self.player_uuid:
                     # Parse the payload and check whether it's an event or not

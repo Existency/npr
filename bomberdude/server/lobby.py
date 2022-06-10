@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from common.types import DEFAULT_PORT
+from common.types import DEFAULT_PORT, Address
 from .connection import Conn
 from common.state import GameState
 from common.payload import ACK, ACTIONS, KALIVE, STATE, Payload
@@ -233,8 +233,8 @@ class Lobby(Thread):
 
                 # handle ACKs as these might have an invalid seq_num
                 if payload.is_ack:
-                    self.outbound.purge_entries(
-                        (payload.short_source, DEFAULT_PORT))
+                    self.outbound.purge_entry(
+                        (payload.short_source, DEFAULT_PORT), payload)
                     continue
 
                     # If the payload's sequence number is equal or older than the current one, discard
@@ -262,7 +262,7 @@ class Lobby(Thread):
                         ack_payload = Payload(
                             ACK, b'', self.uuid, conn.uuid, payload.seq_num, self.byte_address, payload.source)
                         self.outbound.add_entry(
-                        (payload.short_source, DEFAULT_PORT), ack_payload)
+                            (payload.short_source, DEFAULT_PORT), ack_payload)
 
                     except ValueError:
                         logging.error(
@@ -297,8 +297,9 @@ class Lobby(Thread):
                 time.sleep(0.03)
 
             self.in_game = True
-            _out: Dict[Conn, Dict[str, int | float |
-                                  str | Dict[int, Tuple[int, int]]]] = {}
+            _out = {}
+            # _out: Dict[Conn, Dict[str, int | float |
+            #                      str | Dict[int, Tuple[int, int]]]] = {}
             start_time = time.time()
 
             self.game_state.generate_map()
@@ -329,16 +330,17 @@ class Lobby(Thread):
                 with self.game_state_lock:
                     _incoming_changes = self.action_queue_inbound
                     self.action_queue_inbound = []
-                    
+
                 for c in self.conns:
                     if c.timed_out:
                         self.remove_player(c)
                         id = _out[c]['id']
                         lobby_uuid = _out[c]['uuid']
-                        data = Change((0,0,id+9),(0,0,id + 109))
-                        print('killed player',id)
-                        payload.seq_num += 1
-                        _incoming_changes.append(Payload(ACTIONS, data.to_bytes(), lobby_uuid, id, payload.seq_num, self.byte_address, payload.source))
+                        data = Change((0, 0, id+9), (0, 0, id + 109))
+                        print('killed player', id)
+                        payload = Payload(ACTIONS, data.to_bytes(
+                        ), lobby_uuid, id, 0, self.byte_address, c.byte_address)
+                        _incoming_changes.append(payload)
 
                 # Unpack all incoming changes
                 for payload in _incoming_changes:
@@ -363,10 +365,11 @@ class Lobby(Thread):
         Method running in a separate thread to handle outgoing data.
         The data to be sent is taken from the outbound action queue.
         """
+        _last_cleanup = time.time()
 
         while self.running:
             if len(self.action_queue_outbound) != 0:
-                
+
                 actions = []
                 with self.game_state_lock:
                     actions = self.action_queue_outbound
@@ -376,16 +379,36 @@ class Lobby(Thread):
                 data = bytes_from_changes(actions)
 
                 for c in self.conns:
+                    # TODO: add this to cache's sent payloads
                     payload = Payload(ACTIONS, data, self.uuid,
-                                    c.uuid, c.seq_num, self.byte_address, c.byte_address)
+                                      c.uuid, c.seq_num, self.byte_address, c.byte_address)
 
                     # cache the payload
                     self.outbound.add_sent_entry(c.address, payload)
                     c.send(payload.to_bytes(), self.out_sock)
 
+                # get payloads from the outbound cache
+                payloads = self.outbound.get_entries_not_sent()
+
+                # sort the payloads by connection
+                payloads_by_conn: Dict[Address, List[Payload]] = {}
+                for (addr, payload) in payloads:
+                    if addr not in payloads_by_conn:
+                        payloads_by_conn[addr] = []
+                    payloads_by_conn[addr].append(payload)
+
+                if time.time() - _last_cleanup > self.cache_timeout:
+                    payloads = payloads + self.outbound.purge_timeout()
+                    _last_cleanup = time.time()
+
+                for c in self.conns:
+                    if c.address in payloads_by_conn:
+                        for payload in payloads_by_conn[c.address]:
+                            c.send(payload.to_bytes(), self.out_sock)
+
                 time.sleep(0.03)
 
-    def _kalive_and_timeout(self):
+    def _kalive(self):
         """
         This method should not be called directly from outside the lobby.
 
@@ -426,7 +449,7 @@ class Lobby(Thread):
         Thread(target=self._handle_game_state_changes).start()
         Thread(target=self._handle_incoming_data).start()
         Thread(target=self._handle_outgoing).start()
-        Thread(target=self._kalive_and_timeout).start()
+        Thread(target=self._kalive).start()
 
         while self.running:
             time.sleep(0.1)

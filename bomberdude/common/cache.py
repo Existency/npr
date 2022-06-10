@@ -33,17 +33,34 @@ class Cache:
     def __hash__(self) -> int:
         return hash(self.sent)
 
-    def purge_timeout(self):
+    def purge_timeout(self) -> List[Tuple[Address, Payload]]:
         """
-        Purge all entries that have timed out.
+        Purge all entries that have timed out and returns them for one last try.
         """
         cur_time = time.time()
+
+        logging.debug(f"Purging entries that have timed out")
+        # TODO: remove this
         logging.info(f"Purging entries that have timed out")
-        with self.lock:
-            def timedout(x): return x[1][2] + self.cache_timeout < cur_time
-            self.sent = {k: v for k, v in self.sent.items() if not timedout(v)}
-            self.not_sent = {k: v for k,
-                             v in self.not_sent.items() if not timedout(v)}
+        #def timedout(x): return x[1][2] + self.cache_timeout < cur_time
+        #self.sent = {k: v for k, v in self.sent.items() if not timedout(v)}
+        # self.not_sent = {k: v for k,
+        #                 v in self.not_sent.items() if not timedout(v)}
+
+        entries = []
+        for addr, payloads in self.sent.copy().items():
+            for payload, timestamp in payloads:
+                if timestamp + self.cache_timeout < cur_time:
+                    entries.append((addr, payload))
+                    self.purge_entry(addr, payload)
+
+        for addr, payloads in self.not_sent.copy().items():
+            for payload, timestamp in payloads:
+                if timestamp + self.cache_timeout < cur_time:
+                    entries.append((addr, payload))
+                    self.purge_entry(addr, payload)
+
+        return entries
 
     def purge_entry(self, address: Address, payload: Payload):
         """
@@ -51,16 +68,17 @@ class Cache:
 
         :param address: The address of the entry to purge.
         """
-        with self.lock:
-            # remove the entry from the sent cache
-            logging.debug(f"Purging entry from {address}'s sent cache")
-            if address in self.sent:
-                self.sent[address] = [
-                    (p, t) for p, t in self.sent[address] if p != payload]
+        # remove the entry from the sent cache
+        logging.debug(f"Purging entry from {address}'s sent cache")
+        # TODO: remove this
+        logging.info(f"Purging entry from {address}'s sent cache")
+        if address in self.sent:
+            self.sent[address] = [
+                (p, t) for p, t in self.sent[address] if p != payload]
 
-            if address in self.not_sent:
-                self.not_sent[address] = [
-                    (p, t) for p, t in self.not_sent[address] if p != payload]
+        if address in self.not_sent:
+            self.not_sent[address] = [
+                (p, t) for p, t in self.not_sent[address] if p != payload]
 
     def add_sent_entry(self, address: Address, payload: Payload):
         """
@@ -69,13 +87,12 @@ class Cache:
         :param address: The address of the entry.
         :param payload: The payload of the entry.
         """
-        with self.lock:
-            # add the entry to the sent cache
-            logging.debug(f"Adding entry to {address}'s sent cache")
-            if address in self.sent:
-                self.sent[address].append((payload, time.time()))
-            else:
-                self.sent[address] = [(payload, time.time())]
+        # add the entry to the sent cache
+        logging.debug(f"Adding entry to {address}'s sent cache")
+        if address in self.sent:
+            self.sent[address].append((payload, time.time()))
+        else:
+            self.sent[address] = [(payload, time.time())]
 
     def add_entry(self, address: Address, payload: Payload):
         """
@@ -84,7 +101,6 @@ class Cache:
         :param address: The address of the entry.
         :param payload: The payload of the entry.
         """
-
         # add the entry to the sent cache
         logging.info(f"Adding entry to {address}'s not_sent cache")
         if address in self.not_sent:
@@ -95,19 +111,20 @@ class Cache:
     def get_entries_not_sent(self) -> List[Tuple[Address, Payload]]:
         """
         Get all entries that weren't sent and adds them to the sent cache.
+        Removes them from the not_sent cache.
 
         :param address: The address to get entries from.
         :return: A list of entries.
         """
-        with self.lock:
-            entries = []
-            for addr, payloads in self.not_sent.items():
-                for payload, _ in payloads:
-                    entries.append((addr, payload))
-                    # add the entries to the sent cache
-                    self.add_sent_entry(addr, payload)
+        entries = []
 
-            return entries
+        for addr, payloads in self.not_sent.copy().items():
+            for payload, _ in payloads:
+                entries.append((addr, payload))
+                self.add_sent_entry(addr, payload)
+                self.purge_entry(addr, payload)
+
+        return entries
 
     def get_entries_sent_by(self, address: Address) -> List[Payload]:
         """
@@ -116,14 +133,13 @@ class Cache:
         :param address: The address to get entries from.
         :return: A list of entries.
         """
-        with self.lock:
-            entries = []
-            for addr, payloads in self.sent.items():
-                if addr == address:
-                    for payload, _ in payloads:
-                        entries.append(payload)
+        entries = []
+        for addr, payloads in self.sent.items():
+            if addr == address:
+                for payload, _ in payloads:
+                    entries.append(payload)
 
-            return entries
+        return entries
 
     def get_entries_sent(self) -> List[Tuple[Address, Payload]]:
         """
@@ -131,10 +147,18 @@ class Cache:
 
         :return: A list of entries.
         """
-        with self.lock:
-            entries = []
-            for addr, payloads in self.sent.items():
-                for payload, _ in payloads:
-                    entries.append((addr, payload))
 
-            return entries
+        entries = []
+        for addr, payloads in self.sent.items():
+            for payload, _ in payloads:
+                entries.append((addr, payload))
+
+        return entries
+
+    def get_all_entries(self) -> List[Tuple[Address, Payload]]:
+        """
+        Retrieves all entries from the cache.
+
+        :return: A list of entries.
+        """
+        return self.get_entries_sent() + self.get_entries_not_sent()
