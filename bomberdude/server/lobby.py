@@ -233,8 +233,8 @@ class Lobby(Thread):
 
                 # handle ACKs as these might have an invalid seq_num
                 if payload.is_ack:
-                    #self.outbound.purge_entries(
-                    #    payload.seq_num, (payload.short_source, DEFAULT_PORT))
+                    self.outbound.purge_entries(
+                        (payload.short_source, DEFAULT_PORT))
                     continue
 
                     # If the payload's sequence number is equal or older than the current one, discard
@@ -252,8 +252,8 @@ class Lobby(Thread):
                         self.action_queue_inbound.append(payload)
                         ack_payload = Payload(
                             ACK, b'', self.uuid, conn.uuid, payload.seq_num, self.byte_address, payload.source)
-                        #self.outbound.add_entry(
-                        #    payload.seq_num, (payload.short_source, DEFAULT_PORT), ack_payload)
+                        self.outbound.add_entry(
+                            (payload.short_source, DEFAULT_PORT), ack_payload)
 
                 elif payload.is_leave:
                     try:
@@ -261,8 +261,8 @@ class Lobby(Thread):
                         # acknowledge the leave
                         ack_payload = Payload(
                             ACK, b'', self.uuid, conn.uuid, payload.seq_num, self.byte_address, payload.source)
-                        #self.outbound.add_entry(
-                        #    payload.seq_num, (payload.short_source, DEFAULT_PORT), ack_payload)
+                        self.outbound.add_entry(
+                        (payload.short_source, DEFAULT_PORT), ack_payload)
 
                     except ValueError:
                         logging.error(
@@ -271,11 +271,6 @@ class Lobby(Thread):
                 elif payload.is_kalive:
                     # logging.info('Received KALIVE, %s', conn.__str__())
                     conn.kalive()
-
-                    ack_payload = Payload(
-                        ACK, b'', self.uuid, conn.uuid, payload.seq_num, self.byte_address, payload.source)
-                    #self.outbound.add_entry(
-                    #    payload.seq_num, (payload.short_source, DEFAULT_PORT), ack_payload)
 
                 else:
                     # Unhandled payload type
@@ -370,23 +365,25 @@ class Lobby(Thread):
         """
 
         while self.running:
-            actions = []
-            with self.game_state_lock:
-                actions = self.action_queue_outbound
-                self.action_queue_outbound = []
+            if len(self.action_queue_outbound) != 0:
+                
+                actions = []
+                with self.game_state_lock:
+                    actions = self.action_queue_outbound
+                    self.action_queue_outbound = []
 
-            # convert actions to bytes
-            data = bytes_from_changes(actions)
+                # convert actions to bytes
+                data = bytes_from_changes(actions)
 
-            for c in self.conns:
-                payload = Payload(ACTIONS, data, self.uuid,
-                                  c.uuid, c.seq_num, self.byte_address, c.byte_address)
+                for c in self.conns:
+                    payload = Payload(ACTIONS, data, self.uuid,
+                                    c.uuid, c.seq_num, self.byte_address, c.byte_address)
 
-                # cache the payload
-                #self.outbound.add_sent_entry(c.seq_num, c.address, payload)
-                c.send(payload.to_bytes(), self.out_sock)
+                    # cache the payload
+                    self.outbound.add_sent_entry(c.address, payload)
+                    c.send(payload.to_bytes(), self.out_sock)
 
-            time.sleep(0.03)
+                time.sleep(0.03)
 
     def _kalive_and_timeout(self):
         """

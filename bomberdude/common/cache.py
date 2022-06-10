@@ -86,7 +86,7 @@ class Cache:
         """
 
         # add the entry to the sent cache
-        logging.debug(f"Adding entry to {address}'s not_sent cache")
+        logging.info(f"Adding entry to {address}'s not_sent cache")
         if address in self.not_sent:
             self.not_sent[address].append((payload, time.time()))
         else:
