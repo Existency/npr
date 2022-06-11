@@ -11,9 +11,9 @@ import time
 import struct
 from typing import Tuple, List
 from threading import Thread, Lock
-from socket import socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, timeout, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, inet_pton
+from socket import IPPROTO_UDP, IPV6_JOIN_GROUP, getaddrinfo, socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, timeout, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, inet_pton
 import json
-from common.types import DEFAULT_PORT, Address, MobileMap, MobileMetrics, Position
+from common.types import DEFAULT_PORT, MCAST_GROUP, MCAST_PORT, Address, MobileMap, MobileMetrics, Position
 
 InboundQueue = List[Change]
 """A list of changes to be applied to the game state."""
@@ -37,8 +37,6 @@ class NetClient(Thread):
     """The node's path in the filesystem."""
     byte_address: bytes
     """The byte representation of the client's address."""
-    is_mobile: bool
-    """Whether this client is a mobile node."""
     log_level: int = field(default=logging.INFO)
     """The logging level this client will use."""
     state_lock: Lock = field(init=False, default_factory=Lock)
@@ -86,6 +84,8 @@ class NetClient(Thread):
     """The gateway's address. This property is used by mobile nodes only."""
     gateway_map: MobileMap = field(init=False, default_factory=dict)
     """Information about all the gateways in the network."""
+    is_mobile: bool = field(default=False)
+    """Whether this client is a mobile node."""
 
     @cached_property
     def msender(self) -> socket:
@@ -95,6 +95,18 @@ class NetClient(Thread):
         ttl = struct.pack('@I', 3)
         sock = socket(AF_INET6, SOCK_DGRAM)
         sock.setsockopt(IPPROTO_IPV6, IPV6_MULTICAST_HOPS, ttl)
+        return sock
+
+    @cached_property
+    def dtn_sock(self) -> socket:
+        """
+        The socket through which the gateway node sends and receives messages from the DTN.
+        """
+        sock = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP)
+        sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+        sock.bind(('', MCAST_PORT))
+        group = inet_pton(AF_INET6, MCAST_GROUP) + struct.pack('@I', 0)
+        sock.setsockopt(IPPROTO_IPV6, IPV6_JOIN_GROUP, group)
         return sock
 
     def __hash__(self) -> int:
@@ -270,14 +282,12 @@ class NetClient(Thread):
         self.started = False
         self.start_time = 0.0
 
-    # TODO: This will be needed later on
-    def multicast(self, data: bytes):
+    @cached_property
+    def mcast_addr(self) -> Address:
         """
-        Method used to broadcast data using an IPv6 multicast address.
-
-        :param data: The data to be broadcasted.
+        Returns the multicast address of the lobby.
         """
-        self.out_sock.sendto(data, ('ff02::1', DEFAULT_PORT))
+        return (getaddrinfo(MCAST_GROUP, None)[0][4][0], MCAST_PORT)
 
     def unicast(self, data: bytes):
         """
@@ -342,7 +352,7 @@ class NetClient(Thread):
                               self.player_uuid, self.seq_num, self.byte_address, byte_address)
 
             self.seq_num += 1
-            self.multicast(payload.to_bytes())
+            self.msender.sendto(payload.to_bytes(), self.mcast_addr)
             time.sleep(1)
 
     def _broadcast_kalive_wired(self):
@@ -459,7 +469,7 @@ class NetClient(Thread):
 
         while True:
             try:
-                data, addr = self.msender.recvfrom(1500)
+                data, addr = self.dtn_sock.recvfrom(1500)
 
                 address = (addr[0], addr[1])
                 payload = Payload.from_bytes(data)
