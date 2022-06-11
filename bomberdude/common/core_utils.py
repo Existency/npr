@@ -45,9 +45,9 @@ def get_node_xy(path: str) -> Position:
     with open(path, 'r') as f:
         content = f.read()
         # split the line into two parts
-        coords = content.split(',')
         coords = content.split(' ')
-        print("coords", coords)
+        coords = content[:-1]
+        # print("coords", coords)
         # return the xy coordinates
         return (float(coords[0]), float(coords[1]))
 

@@ -37,6 +37,8 @@ class NetClient(Thread):
     """The node's path in the filesystem."""
     byte_address: bytes
     """The byte representation of the client's address."""
+    is_mobile: bool 
+    """Whether this client is a mobile node."""
     log_level: int = field(default=logging.INFO)
     """The logging level this client will use."""
     state_lock: Lock = field(init=False, default_factory=Lock)
@@ -76,15 +78,13 @@ class NetClient(Thread):
     """Sequence number for the client"""
 
     # This only exists in mobile clients
-    mobile_map: MobileMap = field(init=False)
+    mobile_map: MobileMap = field(init=False,default_factory=dict)
     """Information related to other mobile nodes"""
     preferred_mobile: Address = field(init=False)
     """The preferred mobile node to send data to."""
-    is_mobile: bool = field(default=False)
-    """Whether this client is a mobile node."""
     gateway_addr: Address = field(default=('', 0))
     """The gateway's address. This property is used by mobile nodes only."""
-    gateway_map: MobileMap = field(init=False)
+    gateway_map: MobileMap = field(init=False,default_factory=dict)
     """Information about all the gateways in the network."""
 
     @cached_property
@@ -104,6 +104,7 @@ class NetClient(Thread):
         super(NetClient, self).__init__()
         self.gamestate = GameState(self.state_lock, {}, {})
         self.client_cache = Cache(self.cache_timeout, self.log_level)
+        
 
         if self.is_mobile:
             # if gateway_addr is not set, this is an error
@@ -450,6 +451,8 @@ class NetClient(Thread):
 
                 address = (addr[0], addr[1])
                 payload = Payload.from_bytes(data)
+                
+                print(payload.type)
 
                 if payload is None:
                     logging.warning(

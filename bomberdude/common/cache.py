@@ -40,8 +40,6 @@ class Cache:
         cur_time = time.time()
 
         logging.debug(f"Purging entries that have timed out")
-        # TODO: remove this
-        logging.info(f"Purging entries that have timed out")
         #def timedout(x): return x[1][2] + self.cache_timeout < cur_time
         #self.sent = {k: v for k, v in self.sent.items() if not timedout(v)}
         # self.not_sent = {k: v for k,
@@ -70,8 +68,6 @@ class Cache:
         """
         # remove the entry from the sent cache
         logging.debug(f"Purging entry from {address}'s sent cache")
-        # TODO: remove this
-        logging.info(f"Purging entry from {address}'s sent cache")
         if address in self.sent:
             self.sent[address] = [
                 (p, t) for p, t in self.sent[address] if p != payload]
@@ -102,7 +98,7 @@ class Cache:
         :param payload: The payload of the entry.
         """
         # add the entry to the sent cache
-        logging.info(f"Adding entry to {address}'s not_sent cache")
+        logging.debug(f"Adding entry to {address}'s not_sent cache")
         if address in self.not_sent:
             self.not_sent[address].append((payload, time.time()))
         else:
