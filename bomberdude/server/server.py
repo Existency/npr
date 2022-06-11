@@ -129,7 +129,7 @@ class Server(Thread):
         :param reason: The reason why the connection was denied.
         """
         response = Payload(REJECT, reason.encode('utf-8'), '',
-                           conn.uuid, 0, self.byte_address, conn.byte_address)
+                           conn.uuid, 0, self.byte_address, conn.byte_address, DEFAULT_PORT)
 
         self.sock.sendto(response.to_bytes(), conn.address)
 
@@ -143,7 +143,7 @@ class Server(Thread):
         data = lobby.port.to_bytes(2, 'big')
 
         response = Payload(ACCEPT, data, lobby.uuid, conn.uuid,
-                           0, self.byte_address, conn.byte_address)
+                           0, self.byte_address, conn.byte_address, DEFAULT_PORT)
 
         print("address", conn.address)
         self.sock.sendto(response.to_bytes(), conn.address)

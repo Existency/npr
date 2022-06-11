@@ -67,7 +67,7 @@ class Conn:
         # string_ints = [str(int) for int in test2]
         # test2 = ':'.join(string_ints)
         # self.address = (ip_address(test2).compressed, DEFAULT_PORT)
-        print("Connection self.address", self.address)
+        print("Connection self.address", self.address[0])
         self.uuid = uuid()
         self.logger = Logger('Connection {self.uuid}')
         self.logger.info('Connection {self.uuid} init\'d')

@@ -222,13 +222,13 @@ class Lobby(Thread):
 
                 # parse the data
                 payload = Payload.from_bytes(data)
-                #logging.info('Received payload, %s', payload.type_str)
+                logging.info('Received payload, %s %s', payload.type_str, payload.short_source)
                 # get the conn that sent the data
                 conn = self.get_player_by_uuid(payload.player_uuid)
 
                 if conn is None:
                     # TODO: Change this later for NDN redirect support
-                    logging.debug('Connection not found.',)
+                    logging.info('Connection not found.',)
                     continue
 
                 # handle ACKs as these might have an invalid seq_num
@@ -243,7 +243,7 @@ class Lobby(Thread):
                     print('Sequence number is older, %s', conn.__str__())
                     logging.debug('Sequence number is older, %s',
                                   conn.__str__())
-                    continue
+                 #   continue
                 conn.seq_num += 1
 
                 # If it's an action, append it to the action queue
@@ -251,7 +251,7 @@ class Lobby(Thread):
                     with self.game_state_lock:
                         self.action_queue_inbound.append(payload)
                         ack_payload = Payload(
-                            ACK, b'', self.uuid, conn.uuid, payload.seq_num, self.byte_address, payload.source)
+                            ACK, b'', self.uuid, conn.uuid, payload.seq_num, self.byte_address, payload.source, DEFAULT_PORT)
                         self.outbound.add_entry(
                             (payload.short_source, DEFAULT_PORT), ack_payload)
 
@@ -260,7 +260,7 @@ class Lobby(Thread):
                         self.remove_player(conn)
                         # acknowledge the leave
                         ack_payload = Payload(
-                            ACK, b'', self.uuid, conn.uuid, payload.seq_num, self.byte_address, payload.source)
+                            ACK, b'', self.uuid, conn.uuid, payload.seq_num, self.byte_address, payload.source, DEFAULT_PORT)
                         self.outbound.add_entry(
                             (payload.short_source, DEFAULT_PORT), ack_payload)
 
@@ -318,7 +318,7 @@ class Lobby(Thread):
                 for k, v in _out.items():
                     data = json.dumps(v).encode()
                     payload = Payload(STATE, data, self.uuid,
-                                      k.uuid, 0, self.byte_address, k.byte_address)
+                                      k.uuid, 0, self.byte_address, k.byte_address, DEFAULT_PORT)
                     k.send(payload.to_bytes(), self.out_sock)
                 time.sleep(0.05)
 
@@ -339,7 +339,7 @@ class Lobby(Thread):
                         data = Change((0, 0, id+9), (0, 0, id + 109))
                         print('killed player', id)
                         payload = Payload(ACTIONS, data.to_bytes(
-                        ), lobby_uuid, id, 0, self.byte_address, c.byte_address)
+                        ), lobby_uuid, id, 0, self.byte_address, c.byte_address, DEFAULT_PORT)
                         _incoming_changes.append(payload)
 
                 # Unpack all incoming changes
@@ -381,7 +381,7 @@ class Lobby(Thread):
                 for c in self.conns:
                     # TODO: add this to cache's sent payloads
                     payload = Payload(ACTIONS, data, self.uuid,
-                                      c.uuid, c.seq_num, self.byte_address, c.byte_address)
+                                      c.uuid, c.seq_num, self.byte_address, c.byte_address, DEFAULT_PORT)
 
                     # cache the payload
                     self.outbound.add_sent_entry(c.address, payload)
@@ -426,7 +426,7 @@ class Lobby(Thread):
 
             for c in self.conns:
                 sent += c.send(Payload(KALIVE, b'', self.uuid,
-                                       c.uuid, 0, self.byte_address, c.byte_address).to_bytes(), self.out_sock)
+                                       c.uuid, 0, self.byte_address, c.byte_address, DEFAULT_PORT).to_bytes(), self.out_sock)
 
             logging.debug('Sent %d bytes', sent)
 

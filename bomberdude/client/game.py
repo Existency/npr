@@ -1,3 +1,5 @@
+from ipaddress import ip_address
+from socket import AF_INET6, inet_pton
 from numpy import tile
 import pygame
 import sys
@@ -356,9 +358,12 @@ def sendAction(cli,action,x,y):
     
     data = Change((int(x/4),int(y/4),cli.player_id+9),(int(move_x/4),int(move_y/4),tile_id))
     print('sent action',data)
+    
+    destination = inet_pton(AF_INET6, ip_address(cli.lobby_addr[0]).exploded )
+    
     cli.seq_num += 1
     payload = Payload(ACTIONS, data.to_bytes(), cli.lobby_uuid,
-                    cli.player_uuid, cli.seq_num,cli.byte_address,cli.byte_address)
+                    cli.player_uuid, cli.seq_num,cli.byte_address, destination, cli.lobby_addr[1])
     
     cli.client_cache.add_entry(
                         (payload.short_destination, DEFAULT_PORT), payload)

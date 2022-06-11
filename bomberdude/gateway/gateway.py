@@ -6,6 +6,7 @@ The mobile nodes will use the gateway nodes to send and receive messages.
 """
 from ipaddress import ip_address
 import logging
+from queue import Empty
 import time
 import struct
 
@@ -49,9 +50,6 @@ class EdgeNode(Thread):
 
     outgoing_mobile: Cache = field(init=False)
     """Messages meant for mobile nodes."""
-
-    outgoing_srv_lock: Lock = field(init=False, default_factory=Lock)
-    """Lock for the outgoing server list."""
 
     outgoing_server: Cache = field(init=False)
     """Messages meant for the server."""
@@ -112,7 +110,7 @@ class EdgeNode(Thread):
         player_uuid = ""  # we won't have a player_id, this is for DTN purposes
 
         payload = Payload(GKALIVE, data, lobby_uuid,
-                          player_uuid, 0, inet_pton(AF_INET6, ip_src), inet_pton(AF_INET6, ip_dest))
+                          player_uuid, 0, inet_pton(AF_INET6, ip_src), inet_pton(AF_INET6, ip_dest), MCAST_PORT)
 
         return payload.to_bytes()
 
@@ -190,19 +188,17 @@ class EdgeNode(Thread):
         try:
             # only mobile nodes send data in the KALIVE messages
             if payload.data is not None:
-
-                if addr in self.mobile_nodes:
-                    timestamp = time.time()
-                    hops = 3 - payload.ttl
-                    # payload's data to str
-                    _x, _y = payload.data.decode('utf-8').split(',')
-                    position = (float(_x), float(_y))
-                    # get distance between the node and the gateway node
-                    distance = get_node_distance(position, self.position)
-                    # update the node's data
-                    self.mobile_nodes[addr] = (
-                        distance, position, timestamp, hops)
-                    logging.info('Received KALIVE from {}'.format(addr))
+                timestamp = time.time()
+                hops = 3 - payload.ttl
+                # payload's data to str
+                _x, _y = payload.data.decode('utf-8').split(',')
+                position = (float(_x), float(_y))
+                # get distance between the node and the gateway node
+                distance = get_node_distance(position, self.position)
+                # update the node's data
+                self.mobile_nodes[addr] = (
+                    distance, position, timestamp, hops)
+                logging.info('Received KALIVE from {}'.format(addr))
         except Exception as e:
             logging.error('Failed to handle KALIVE message: {}'.format(e))
 
@@ -261,8 +257,9 @@ class EdgeNode(Thread):
                 self.last_update = time.time()
 
                 self.preferred_mobile = self._get_preferred_node()
-                logging.info('Preferred mobile node is {}'.format(
-                    self.preferred_mobile[0]))
+                #print(self.preferred_mobile)
+                #logging.info('Preferred mobile node is {}'.format(
+                #    self.preferred_mobile[0]))
 
             time.sleep(1)
 
@@ -285,7 +282,16 @@ class EdgeNode(Thread):
                     continue
 
                 if payload.is_kalive:
+                    
                     payload = self.handle_kalive(address, payload)
+                    
+                    if payload.lobby_port != MCAST_PORT:
+                        payload.destination = inet_pton(AF_INET6, ip_address(self.server_address[0]).exploded )
+                        
+                        self.outgoing_server.add_entry(
+                            address, payload)
+                    
+                    
 
             except timeout:
                 continue
@@ -307,7 +313,7 @@ class EdgeNode(Thread):
         while self.running:
             try:
                 data, addr = self.in_socket.recvfrom(1500)
-                logging.info('Received {} from {}'.format(data, addr))
+                logging.info('Received from {}'.format(addr))
 
                 address = (addr[0], addr[1])
 
@@ -339,11 +345,11 @@ class EdgeNode(Thread):
                         self.outgoing_mobile.purge_entry(
                             destination, payload)
 
-                    with self.outgoing_srv_lock:
-                        self.outgoing_server.add_entry(
-                            address, payload)
+                    self.outgoing_server.add_entry(
+                        address, payload)
                     logging.info(
                         'Received message from mobile node meant for server.')
+                    
 
             except timeout:
                 continue
@@ -362,14 +368,15 @@ class EdgeNode(Thread):
 
         while self.running:
             # Send messages to the server
-            outgoing = []
-
-            with self.outgoing_srv_lock:
-                outgoing = self.outgoing_server.get_entries_not_sent()
-
+            
+            outgoing = self.outgoing_server.get_entries_not_sent()
+                
+            #print("outgoing",outgoing)
+            
             for (addr, payload) in outgoing:
-                logging.debug('Sending payload to {}'.format(addr))
-                self.out_socket.sendto(payload.to_bytes(), addr)
+                #logging.info('Sending payload to {} {}'.format(payload.short_destination,payload.lobby_port))
+                self.out_socket.sendto(payload.to_bytes(), (payload.short_destination,payload.lobby_port))
+                
 
             # Send messages to the mobile nodes
             outgoing = self.outgoing_mobile.get_entries_not_sent()

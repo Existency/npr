@@ -138,8 +138,6 @@ class NetClient(Thread):
 
             logging.info('Gateway and Mobile Map init\'d.', self.gateway_map)
 
-        self.running = True
-
         logging.info('Client init\'d.')
 
     @property
@@ -197,10 +195,10 @@ class NetClient(Thread):
         print(self.byte_address)
 
         payload = Payload(JOIN, b'', lobby_id, '',
-                          self.seq_num, self.byte_address, self.byte_address)
+                          self.seq_num, self.byte_address, self.byte_address, DEFAULT_PORT)
 
         retry_payload = Payload(REJOIN, b'', lobby_id,
-                                '', self.seq_num, self.byte_address, self.byte_address)
+                                '', self.seq_num, self.byte_address, self.byte_address, DEFAULT_PORT)
         retry_bytes = retry_payload.to_bytes()
         self.seq_num = + 1
         print("address: ", self.auth_ip)
@@ -238,6 +236,7 @@ class NetClient(Thread):
 
                         logging.info('Client joined lobby %s', self.lobby_uuid)
                         self.last_kalive = time.time()  # set kalive to now
+                        self.running = True
                         return True
 
                     elif data.type == REJECT:
@@ -265,6 +264,8 @@ class NetClient(Thread):
                 in_sock.sendto(retry_bytes, self.auth_ip)
 
             time.sleep(0.25)
+            
+        
 
     def reset(self):
         """
@@ -337,20 +338,24 @@ class NetClient(Thread):
 
         while True:
             # check whether last kalive from server was more than 5 seconds ago
-            if time.time() - self.last_kalive > 5:
-                logging.warning('Server not responding...')
+            #if time.time() - self.last_kalive > 5:
+            #    logging.warning('Server not responding...')
 
             location = self.location
 
             data = bytes(str(location[0]) +
                          ',' + str(location[1]), 'utf-8')
 
-            payload = Payload(KALIVE, data, '', '', self.seq_num,
-                              self.byte_address, byte_address)
+            if self.running:
+                payload = Payload(KALIVE, data, self.lobby_uuid, self.player_uuid, self.seq_num,
+                                self.byte_address, byte_address, self.lobby_addr[1])
+            else:
+                payload = Payload(KALIVE, data, '', '', self.seq_num,
+                                    self.byte_address, byte_address, MCAST_PORT)
 
             self.msender.sendto(payload.to_bytes(), self.mcast_addr)
             print("Sending Kalive to ",self.mcast_addr)
-            time.sleep(1)
+            time.sleep(0.5)
 
     def _broadcast_kalive_wired(self):
         """
@@ -370,7 +375,7 @@ class NetClient(Thread):
                 logging.warning('Server not responding...')
 
             payload = Payload(KALIVE, data, self.lobby_uuid,
-                              self.player_uuid, self.seq_num, self.byte_address, self.lobby_byte_address)
+                              self.player_uuid, self.seq_num, self.byte_address, self.lobby_byte_address,self.lobby_addr[1])
 
             self.seq_num += 1
             self.unicast(payload.to_bytes())
@@ -415,11 +420,7 @@ class NetClient(Thread):
             addr for addr in self.mobile_map if self.mobile_map[addr][0] == min_dist]
 
         best_candidate = min(candidates, key=lambda x: self.mobile_map[x][0])
-        
-        for k,v in self.mobile_map.items():
-            print("map ", k, " " , v)
             
-
         # if the min_dist is no less than 20% larger than the gateway node and has less hops, return the gateway node
         if min_dist * 1.1 > dist and self.mobile_map[best_candidate][3] >= hops:
             return best_candidate
@@ -436,13 +437,13 @@ class NetClient(Thread):
             payloads = self.client_cache.get_entries_not_sent()
 
             # get prefered destination node
-            out_addr = self.preferred_mobile
-            
-            print("out_add",out_addr)
+            out_addr = (self.preferred_mobile[0],DEFAULT_PORT )
+        
             
             for (addr, payload) in payloads:
-                logging.debug(
+                logging.info(
                     'Sending payload to {} through {}.'.format(addr, out_addr))
+                payload.port = self.lobby_addr[1]
                 self.out_sock.sendto(payload.to_bytes(), out_addr)
 
             time.sleep(0.1)
@@ -547,7 +548,7 @@ class NetClient(Thread):
 
                         # Ack the payload
                         ack_payload = Payload(ACK, b'', self.lobby_uuid, self.player_uuid,
-                                              payload.seq_num, self.byte_address, self.lobby_byte_address)
+                                              payload.seq_num, self.byte_address, self.lobby_byte_address, self.lobby_addr[1])
 
                         self.client_cache.add_entry(
                             (payload.short_source, DEFAULT_PORT), ack_payload)
@@ -606,7 +607,7 @@ class NetClient(Thread):
         logging.info('Client leaving lobby by user request.')
         # TODO: Fix seq_num across all files
         payload = Payload(LEAVE, b'', self.lobby_uuid,
-                          self.player_uuid, self.seq_num, self.byte_address, b'')
+                          self.player_uuid, self.seq_num, self.byte_address, b'', self.lobby_addr[1])
 
         self.seq_num += 1
         self.unicast(payload.to_bytes())
