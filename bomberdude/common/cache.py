@@ -38,13 +38,7 @@ class Cache:
         Purge all entries that have timed out and returns them for one last try.
         """
         cur_time = time.time()
-
         logging.debug(f"Purging entries that have timed out")
-        #def timedout(x): return x[1][2] + self.cache_timeout < cur_time
-        #self.sent = {k: v for k, v in self.sent.items() if not timedout(v)}
-        # self.not_sent = {k: v for k,
-        #                 v in self.not_sent.items() if not timedout(v)}
-
         entries = []
         for addr, payloads in self.sent.copy().items():
             for payload, timestamp in payloads:
@@ -66,7 +60,6 @@ class Cache:
 
         :param address: The address of the entry to purge.
         """
-        # remove the entry from the sent cache
         logging.debug(f"Purging entry from {address}'s sent cache")
         if address in self.sent:
             self.sent[address] = [
@@ -83,7 +76,6 @@ class Cache:
         :param address: The address of the entry.
         :param payload: The payload of the entry.
         """
-        # add the entry to the sent cache
         logging.debug(f"Adding entry to {address}'s sent cache")
         if address in self.sent:
             self.sent[address].append((payload, time.time()))
@@ -97,7 +89,6 @@ class Cache:
         :param address: The address of the entry.
         :param payload: The payload of the entry.
         """
-        # add the entry to the sent cache
         logging.debug(f"Adding entry to {address}'s not_sent cache")
         if address in self.not_sent:
             self.not_sent[address].append((payload, time.time()))
@@ -113,7 +104,6 @@ class Cache:
         :return: A list of entries.
         """
         entries = []
-
         for addr, payloads in self.not_sent.copy().items():
             for payload, _ in payloads:
                 entries.append((addr, payload))
@@ -143,7 +133,6 @@ class Cache:
 
         :return: A list of entries.
         """
-
         entries = []
         for addr, payloads in self.sent.items():
             for payload, _ in payloads:

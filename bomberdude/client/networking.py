@@ -37,7 +37,7 @@ class NetClient(Thread):
     """The node's path in the filesystem."""
     byte_address: bytes
     """The byte representation of the client's address."""
-    is_mobile: bool 
+    is_mobile: bool
     """Whether this client is a mobile node."""
     log_level: int = field(default=logging.INFO)
     """The logging level this client will use."""
@@ -78,13 +78,13 @@ class NetClient(Thread):
     """Sequence number for the client"""
 
     # This only exists in mobile clients
-    mobile_map: MobileMap = field(init=False,default_factory=dict)
+    mobile_map: MobileMap = field(init=False, default_factory=dict)
     """Information related to other mobile nodes"""
     preferred_mobile: Address = field(init=False)
     """The preferred mobile node to send data to."""
     gateway_addr: Address = field(default=('', 0))
     """The gateway's address. This property is used by mobile nodes only."""
-    gateway_map: MobileMap = field(init=False,default_factory=dict)
+    gateway_map: MobileMap = field(init=False, default_factory=dict)
     """Information about all the gateways in the network."""
 
     @cached_property
@@ -104,7 +104,9 @@ class NetClient(Thread):
         super(NetClient, self).__init__()
         self.gamestate = GameState(self.state_lock, {}, {})
         self.client_cache = Cache(self.cache_timeout, self.log_level)
-        
+
+        logging.basicConfig(
+            level=self.log_level, format='%(levelname)s: %(message)s')
 
         if self.is_mobile:
             # if gateway_addr is not set, this is an error
@@ -113,10 +115,20 @@ class NetClient(Thread):
                 exit(1)
             self.preferred_mobile = self.gateway_addr
 
-        logging.basicConfig(
-            level=self.log_level, format='%(levelname)s: %(message)s')
+            Thread(target=self._handle_dtn_input).start()
+            logging.info('DTN input handler started.')
+            Thread(target=self._broadcast_kalive_mobile).start()
+            logging.info('Kalive (mobile) handler started.')
 
-        logging.info('Client init\'d')
+            while not (self.gateway_map and self.mobile_map):
+                # wait for at least one gateway and one mobile node to join
+                time.sleep(0.1)
+
+            logging.info('Gateway and Mobile Map init\'d.', self.gateway_map)
+
+        self.running = True
+
+        logging.info('Client init\'d.')
 
     @property
     def location(self) -> Position:
@@ -445,13 +457,13 @@ class NetClient(Thread):
         Handles the data received from the DTN network.
         """
 
-        while self.running:
+        while True:
             try:
                 data, addr = self.msender.recvfrom(1500)
 
                 address = (addr[0], addr[1])
                 payload = Payload.from_bytes(data)
-                
+
                 print(payload.type)
 
                 if payload is None:
@@ -546,23 +558,16 @@ class NetClient(Thread):
         """
         Main loop of the networking client.
         """
-
-        self.running = True
         Thread(target=self._handle_state).start()
         logging.info('State handler started.')
         Thread(target=self._handle_input).start()
         logging.info('Input handler started.')
 
         if self.is_mobile:
-            Thread(target=self._handle_dtn_input).start()
-            logging.info('DTN input handler started.')
-            Thread(target=self._broadcast_kalive_mobile).start()
-            logging.info('Kalive (mobile) handler started.')
             Thread(target=self._handle_output_mobile).start()
             logging.info('Output (mobile) handler started.')
             Thread(target=self._handle_metrics_update).start()
             logging.info('Metrics update handler started.')
-
         else:
             Thread(target=self._broadcast_kalive_wired).start()
             logging.info('Kalive (wired) handler started.')
