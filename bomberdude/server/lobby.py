@@ -222,7 +222,7 @@ class Lobby(Thread):
 
                 # parse the data
                 payload = Payload.from_bytes(data)
-                logging.info('Received payload, %s', payload.type_str)
+                #logging.info('Received payload, %s', payload.type_str)
                 # get the conn that sent the data
                 conn = self.get_player_by_uuid(payload.player_uuid)
 
@@ -348,7 +348,7 @@ class Lobby(Thread):
                     # changes = payload.data
                     for change in changes:
                         self.game_state._apply_change(change)
-                    print(changes)
+                    #print(changes)
                     # append updates to the outgoing queue
                     self.action_queue_outbound.extend(changes)
 

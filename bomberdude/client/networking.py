@@ -335,7 +335,7 @@ class NetClient(Thread):
         """
         byte_address = inet_pton(AF_INET6, MCAST_GROUP)
 
-        while self.running:
+        while True:
             # check whether last kalive from server was more than 5 seconds ago
             if time.time() - self.last_kalive > 5:
                 logging.warning('Server not responding...')
@@ -437,7 +437,9 @@ class NetClient(Thread):
 
             # get prefered destination node
             out_addr = self.preferred_mobile
-
+            
+            print("out_add",out_addr)
+            
             for (addr, payload) in payloads:
                 logging.debug(
                     'Sending payload to {} through {}.'.format(addr, out_addr))
