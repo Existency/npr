@@ -349,6 +349,7 @@ class NetClient(Thread):
                               self.byte_address, byte_address)
 
             self.msender.sendto(payload.to_bytes(), self.mcast_addr)
+            print("Sending Kalive to ",self.mcast_addr)
             time.sleep(1)
 
     def _broadcast_kalive_wired(self):
@@ -382,7 +383,7 @@ class NetClient(Thread):
         This method is used to automatically update the prefered destination node.
         """
         while self.running:
-            time.sleep(5)
+            time.sleep(1)
             # Every 5 seconds update the preffered mobile node and set it's address as the default.
             self.preferred_mobile = self._get_preferred_node()
             logging.info('Preferred mobile node is {}'.format(
@@ -413,10 +414,14 @@ class NetClient(Thread):
         candidates = [
             addr for addr in self.mobile_map if self.mobile_map[addr][0] == min_dist]
 
-        best_candidate = min(candidates, key=lambda x: self.mobile_map[x][3])
+        best_candidate = min(candidates, key=lambda x: self.mobile_map[x][0])
+        
+        for k,v in self.mobile_map.items():
+            print("map ", k, " " , v)
+            
 
         # if the min_dist is no less than 20% larger than the gateway node and has less hops, return the gateway node
-        if min_dist * 1.2 > dist and self.mobile_map[best_candidate][3] >= hops:
+        if min_dist * 1.1 > dist and self.mobile_map[best_candidate][3] >= hops:
             return best_candidate
 
         return gateway_addr
@@ -470,7 +475,7 @@ class NetClient(Thread):
                 address = (addr[0], addr[1])
                 payload = Payload.from_bytes(data)
 
-                print(payload.type)
+                #print(payload.type)
 
                 if payload is None:
                     logging.warning(

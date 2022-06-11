@@ -222,7 +222,7 @@ class Lobby(Thread):
 
                 # parse the data
                 payload = Payload.from_bytes(data)
-                #logging.info('Received payload, %s', payload.type_str)
+                logging.info('Received payload, %s', payload.type_str)
                 # get the conn that sent the data
                 conn = self.get_player_by_uuid(payload.player_uuid)
 
@@ -269,7 +269,7 @@ class Lobby(Thread):
                             'Attempt to remove unexistent connection, %s', conn.__str__())
 
                 elif payload.is_kalive:
-                    # logging.info('Received KALIVE, %s', conn.__str__())
+                    logging.info('Received KALIVE, %s', conn.__str__())
                     conn.kalive()
 
                 else:

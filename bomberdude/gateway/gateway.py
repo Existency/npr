@@ -103,7 +103,8 @@ class EdgeNode(Thread):
         # ip_src = struct.pack('!16s', ip_src)
         # ip = ip_address(MCAST_GROUP).exploded.encode('utf-8')
         # ip_dest = struct.pack('!16s', ip)
-
+        
+        
         data = bytes(str(self.position[0]) +
                      ',' + str(self.position[1]), 'utf-8')
 
