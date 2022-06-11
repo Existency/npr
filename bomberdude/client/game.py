@@ -10,6 +10,7 @@ from .enemy import Enemy
 from .algorithm import Algorithm
 from common.payload import ACTIONS, KALIVE, REJOIN, STATE, Payload, ACCEPT, LEAVE, JOIN, REDIRECT, REJECT
 from common.state import Change
+from common.types import DEFAULT_PORT
 from threading import Thread
 
 TILE_WIDTH = 40
@@ -359,7 +360,9 @@ def sendAction(cli,action,x,y):
     payload = Payload(ACTIONS, data.to_bytes(), cli.lobby_uuid,
                     cli.player_uuid, cli.seq_num,cli.byte_address,cli.byte_address)
     
-    cli.unicast(payload.to_bytes())
+    cli.client_cache.add_entry(
+                        (payload.short_destination, DEFAULT_PORT), payload)
+    #cli.unicast(payload.to_bytes())
     
 
 def main(cli):

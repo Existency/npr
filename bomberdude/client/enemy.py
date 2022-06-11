@@ -9,6 +9,7 @@ from common.state import Change
 from typing import Tuple, List
 from threading import Lock
 import math, time
+from common.types import DEFAULT_PORT
 
 
 class Enemy:
@@ -47,7 +48,9 @@ class Enemy:
         payload = Payload(ACTIONS, data.to_bytes(), self.cli.lobby_uuid,
                         self.cli.player_uuid, self.cli.seq_num,self.cli.byte_address,self.cli.byte_address)
         
-        self.cli.unicast(payload.to_bytes())
+        self.cli.client_cache.add_entry(
+                        (payload.short_destination, DEFAULT_PORT), payload)
+        #self.cli.unicast(payload.to_bytes())
 
     def move(self, map, bombs, explosions, enemy):
 

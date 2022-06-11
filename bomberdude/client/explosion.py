@@ -1,6 +1,7 @@
 from typing import Tuple
 from common.payload import ACTIONS, Payload
 from common.state import Change, bytes_from_changes 
+from common.types import DEFAULT_PORT
 
 class Explosion:
 
@@ -25,7 +26,10 @@ class Explosion:
         payload = Payload(ACTIONS, bytes_from_changes(list_changes), self.cli.lobby_uuid,
                         self.cli.player_uuid, self.cli.seq_num,self.cli.byte_address,self.cli.byte_address)
         
-        self.cli.unicast(payload.to_bytes())
+        self.cli.client_cache.add_entry(
+                        (payload.short_destination, DEFAULT_PORT), payload)
+        
+        #self.cli.unicast(payload.to_bytes())
         
       
 

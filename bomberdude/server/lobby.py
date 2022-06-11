@@ -390,16 +390,16 @@ class Lobby(Thread):
                 # get payloads from the outbound cache
                 payloads = self.outbound.get_entries_not_sent()
 
+                #if time.time() - _last_cleanup > self.cache_timeout:
+                #    payloads = payloads + self.outbound.purge_timeout()
+                #    _last_cleanup = time.time()
+                    
                 # sort the payloads by connection
                 payloads_by_conn: Dict[Address, List[Payload]] = {}
                 for (addr, payload) in payloads:
                     if addr not in payloads_by_conn:
                         payloads_by_conn[addr] = []
                     payloads_by_conn[addr].append(payload)
-
-                if time.time() - _last_cleanup > self.cache_timeout:
-                    payloads = payloads + self.outbound.purge_timeout()
-                    _last_cleanup = time.time()
 
                 for c in self.conns:
                     if c.address in payloads_by_conn:
