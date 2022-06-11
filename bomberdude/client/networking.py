@@ -333,14 +333,11 @@ class NetClient(Thread):
 
         This message is used to broadcast the kalive to the server in a mobile context.
         """
-        # use inet_pton to convert "ff02::1" to bytes
-        byte_address = inet_pton(AF_INET6, "ff02::1")
+        byte_address = inet_pton(AF_INET6, MCAST_GROUP)
 
-        # mobile clients
         while self.running:
             # check whether last kalive from server was more than 5 seconds ago
             if time.time() - self.last_kalive > 5:
-
                 logging.warning('Server not responding...')
 
             location = self.location
@@ -348,10 +345,9 @@ class NetClient(Thread):
             data = bytes(str(location[0]) +
                          ',' + str(location[1]), 'utf-8')
 
-            payload = Payload(KALIVE, data, self.lobby_uuid,
-                              self.player_uuid, self.seq_num, self.byte_address, byte_address)
+            payload = Payload(KALIVE, data, '', '', self.seq_num,
+                              self.byte_address, byte_address)
 
-            self.seq_num += 1
             self.msender.sendto(payload.to_bytes(), self.mcast_addr)
             time.sleep(1)
 
@@ -489,6 +485,9 @@ class NetClient(Thread):
                     distance = get_node_distance(position, self.location)
 
                     self.gateway_map[address] = (
+                        distance, position, timestamp, hops)
+
+                    self.mobile_map[address] = (
                         distance, position, timestamp, hops)
 
                 if payload.is_kalive:
