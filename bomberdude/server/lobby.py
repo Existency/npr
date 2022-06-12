@@ -1,6 +1,7 @@
 from __future__ import annotations
+from ipaddress import ip_address
 
-from common.types import DEFAULT_PORT
+from common.types import DEFAULT_PORT, TIMEOUT, Address
 from .connection import Conn
 from common.state import GameState
 from common.payload import ACK, ACTIONS, KALIVE, STATE, Payload
@@ -8,7 +9,7 @@ from common.state import Change, bytes_from_changes, change_from_bytes
 from common.cache import Cache
 from dataclasses import dataclass, field
 import logging
-from socket import socket, timeout
+from socket import AF_INET6, inet_pton, socket, timeout
 from threading import Thread, Lock
 import time
 from typing import Dict, List, Optional, Tuple
@@ -218,32 +219,40 @@ class Lobby(Thread):
         while self.running:
 
             try:
-                data, _ = self.in_sock.recvfrom(1500)
+                data, addr = self.in_sock.recvfrom(1500)
 
                 # parse the data
                 payload = Payload.from_bytes(data)
-                logging.info('Received payload, %s', payload.type_str)
+                logging.debug('Received payload, %s %s', payload.type_str, payload.short_source)
                 # get the conn that sent the data
                 conn = self.get_player_by_uuid(payload.player_uuid)
 
                 if conn is None:
                     # TODO: Change this later for NDN redirect support
-                    logging.debug('Connection not found.',)
+                    logging.info('Connection not found.',)
                     continue
-
+                
+                addr_aux = (addr[0],DEFAULT_PORT)
+                
+                if conn.address != addr_aux:
+                    print("addresses ",addr_aux, conn.address,payload.short_source)
+                    conn.address = addr_aux
+                    
+                #    conn.byte_address = inet_pton(AF_INET6, ip_address(addr_aux[0]).exploded )
+                
                 # handle ACKs as these might have an invalid seq_num
                 if payload.is_ack:
-                    self.outbound.purge_entries(
-                        payload.seq_num, (payload.short_source, DEFAULT_PORT))
+                    self.outbound.purge_entry(
+                        (payload.short_source, DEFAULT_PORT), payload)
                     continue
 
                     # If the payload's sequence number is equal or older than the current one, discard
                     # TODO: This is a hack fix, will require some work later on.
                 if payload.seq_num <= conn.seq_num:
-                    print('Sequence number is older, %s', conn.__str__())
+                    #print('Sequence number is older, %s', conn.__str__())
                     logging.debug('Sequence number is older, %s',
                                   conn.__str__())
-                    continue
+                 #   continue
                 conn.seq_num += 1
 
                 # If it's an action, append it to the action queue
@@ -251,31 +260,26 @@ class Lobby(Thread):
                     with self.game_state_lock:
                         self.action_queue_inbound.append(payload)
                         ack_payload = Payload(
-                            ACK, b'', self.uuid, conn.uuid, payload.seq_num, self.byte_address, payload.source)
+                            ACK, b'', self.uuid, conn.uuid, payload.seq_num, self.byte_address, payload.source, DEFAULT_PORT)
                         self.outbound.add_entry(
-                            payload.seq_num, (payload.short_source, DEFAULT_PORT), ack_payload)
+                            (payload.short_source, DEFAULT_PORT), ack_payload)
 
                 elif payload.is_leave:
                     try:
                         self.remove_player(conn)
                         # acknowledge the leave
                         ack_payload = Payload(
-                            ACK, b'', self.uuid, conn.uuid, payload.seq_num, self.byte_address, payload.source)
+                            ACK, b'', self.uuid, conn.uuid, payload.seq_num, self.byte_address, payload.source, DEFAULT_PORT)
                         self.outbound.add_entry(
-                            payload.seq_num, (payload.short_source, DEFAULT_PORT), ack_payload)
+                            (payload.short_source, DEFAULT_PORT), ack_payload)
 
                     except ValueError:
                         logging.error(
                             'Attempt to remove unexistent connection, %s', conn.__str__())
 
                 elif payload.is_kalive:
-                    # logging.info('Received KALIVE, %s', conn.__str__())
+                    logging.debug('Received KALIVE, %s', conn.__str__())
                     conn.kalive()
-
-                    ack_payload = Payload(
-                        ACK, b'', self.uuid, conn.uuid, payload.seq_num, self.byte_address, payload.source)
-                    self.outbound.add_entry(
-                        payload.seq_num, (payload.short_source, DEFAULT_PORT), ack_payload)
 
                 else:
                     # Unhandled payload type
@@ -302,8 +306,9 @@ class Lobby(Thread):
                 time.sleep(0.03)
 
             self.in_game = True
-            _out: Dict[Conn, Dict[str, int | float |
-                                  str | Dict[int, Tuple[int, int]]]] = {}
+            _out = {}
+            # _out: Dict[Conn, Dict[str, int | float |
+            #                      str | Dict[int, Tuple[int, int]]]] = {}
             start_time = time.time()
 
             self.game_state.generate_map()
@@ -318,11 +323,11 @@ class Lobby(Thread):
                     'boxes': self.game_state.boxes
                 }
 
-            while start_time + 5 > time.time():
+            while start_time + 2 > time.time():
                 for k, v in _out.items():
                     data = json.dumps(v).encode()
                     payload = Payload(STATE, data, self.uuid,
-                                      k.uuid, 0, self.byte_address, k.byte_address)
+                                      k.uuid, 0, self.byte_address, k.byte_address, DEFAULT_PORT)
                     k.send(payload.to_bytes(), self.out_sock)
                 time.sleep(0.05)
 
@@ -335,13 +340,24 @@ class Lobby(Thread):
                     _incoming_changes = self.action_queue_inbound
                     self.action_queue_inbound = []
 
+                for c in self.conns:
+                    if c.timed_out:
+                        self.remove_player(c)
+                        id = _out[c]['id']
+                        lobby_uuid = _out[c]['uuid']
+                        data = Change((0, 0, id+9), (0, 0, id + 109))
+                        print('killed player', id)
+                        payload = Payload(ACTIONS, data.to_bytes(
+                        ), lobby_uuid, id, 0, self.byte_address, c.byte_address, DEFAULT_PORT)
+                        _incoming_changes.append(payload)
+
                 # Unpack all incoming changes
                 for payload in _incoming_changes:
                     changes = change_from_bytes(payload.data)
                     # changes = payload.data
                     for change in changes:
                         self.game_state._apply_change(change)
-                    print(changes)
+                    #print(changes)
                     # append updates to the outgoing queue
                     self.action_queue_outbound.extend(changes)
 
@@ -358,27 +374,50 @@ class Lobby(Thread):
         Method running in a separate thread to handle outgoing data.
         The data to be sent is taken from the outbound action queue.
         """
+        _last_cleanup = time.time()
 
         while self.running:
-            actions = []
-            with self.game_state_lock:
-                actions = self.action_queue_outbound
-                self.action_queue_outbound = []
+            if len(self.action_queue_outbound) != 0:
 
-            # convert actions to bytes
-            data = bytes_from_changes(actions)
+                actions = []
+                with self.game_state_lock:
+                    actions = self.action_queue_outbound
+                    self.action_queue_outbound = []
 
-            for c in self.conns:
-                payload = Payload(ACTIONS, data, self.uuid,
-                                  c.uuid, c.seq_num, self.byte_address, c.byte_address)
+                # convert actions to bytes
+                data = bytes_from_changes(actions)
 
-                # cache the payload
-                self.outbound.add_sent_entry(c.seq_num, c.address, payload)
-                c.send(payload.to_bytes(), self.out_sock)
+                for c in self.conns:
+                    # TODO: add this to cache's sent payloads
+                    payload = Payload(ACTIONS, data, self.uuid,
+                                      c.uuid, c.seq_num, self.byte_address, c.byte_address, DEFAULT_PORT)
 
-            time.sleep(0.03)
+                    # cache the payload
+                    self.outbound.add_sent_entry(c.address, payload)
+                    c.send(payload.to_bytes(), self.out_sock)
 
-    def _kalive_and_timeout(self):
+                # get payloads from the outbound cache
+                payloads = self.outbound.get_entries_not_sent()
+
+                #if time.time() - _last_cleanup > self.cache_timeout:
+                #    payloads = payloads + self.outbound.purge_timeout()
+                #    _last_cleanup = time.time()
+                    
+                # sort the payloads by connection
+                payloads_by_conn: Dict[Address, List[Payload]] = {}
+                for (addr, payload) in payloads:
+                    if addr not in payloads_by_conn:
+                        payloads_by_conn[addr] = []
+                    payloads_by_conn[addr].append(payload)
+
+                for c in self.conns:
+                    if c.address in payloads_by_conn:
+                        for payload in payloads_by_conn[c.address]:
+                            c.send(payload.to_bytes(), self.out_sock)
+
+                time.sleep(0.03)
+
+    def _kalive(self):
         """
         This method should not be called directly from outside the lobby.
 
@@ -388,10 +427,6 @@ class Lobby(Thread):
         while self.running:
             time.sleep(1)
 
-            for c in self.conns:
-                if c.timed_out:
-                    self.remove_player(c)
-
             # if no one is connected, stop the lobby
             if len(self.conns) == 0:
                 self.terminate()
@@ -400,7 +435,7 @@ class Lobby(Thread):
 
             for c in self.conns:
                 sent += c.send(Payload(KALIVE, b'', self.uuid,
-                                       c.uuid, 0, self.byte_address, c.byte_address).to_bytes(), self.out_sock)
+                                       c.uuid, 0, self.byte_address, c.byte_address, DEFAULT_PORT).to_bytes(), self.out_sock)
 
             logging.debug('Sent %d bytes', sent)
 
@@ -423,7 +458,7 @@ class Lobby(Thread):
         Thread(target=self._handle_game_state_changes).start()
         Thread(target=self._handle_incoming_data).start()
         Thread(target=self._handle_outgoing).start()
-        Thread(target=self._kalive_and_timeout).start()
+        Thread(target=self._kalive).start()
 
         while self.running:
             time.sleep(0.1)

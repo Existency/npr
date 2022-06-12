@@ -47,6 +47,7 @@ MCAST_PORT = 9998
 
 DEFAULT_PORT = 9999
 
+TIMEOUT = 10
 
 ###############################################
 # NDN specific types                          #

@@ -6,23 +6,24 @@ The mobile nodes will use the gateway nodes to send and receive messages.
 """
 from ipaddress import ip_address
 import logging
+from queue import Empty
 import time
 import struct
 
 from dataclasses import dataclass, field
 from functools import cached_property
-from socket import IPPROTO_IPV6, IPPROTO_UDP, IPV6_JOIN_GROUP, IPV6_MULTICAST_HOPS, getaddrinfo, socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT, inet_pton, getaddrinfo, timeout
+from socket import IPPROTO_IPV6, IPPROTO_UDP, IPV6_JOIN_GROUP, IPV6_MULTICAST_HOPS, getaddrinfo, inet_ntop, socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT, inet_pton, getaddrinfo, timeout
 from threading import Thread, Lock
-from typing import List, Optional
+from typing import Optional
 
-from common.payload import KALIVE, Payload
-from common.types import DEFAULT_PORT, MCAST_GROUP, MCAST_PORT, Position, Address, MobileMap
+from common.payload import GKALIVE, Payload
+from common.types import DEFAULT_PORT, MCAST_GROUP, MCAST_PORT, TIMEOUT, Position, Address, MobileMap
 from common.cache import Cache
 from common.core_utils import get_node_distance, get_node_xy
 
 
 @dataclass
-class EdgeNode:
+class EdgeNode(Thread):
     """
     gateway node for the DTN network.
     """
@@ -32,7 +33,7 @@ class EdgeNode:
     node_path: str
     """The node's system path (CORE related)."""
 
-    gateway_dtn_address: str
+    gateway_dtn_address: bytes
     """The address used to interact with the DTN"""
 
     cache_timeout: int = field(default=20)
@@ -50,13 +51,10 @@ class EdgeNode:
     outgoing_mobile: Cache = field(init=False)
     """Messages meant for mobile nodes."""
 
-    outgoing_srv_lock: Lock = field(init=False, default_factory=Lock)
-    """Lock for the outgoing server list."""
-
     outgoing_server: Cache = field(init=False)
     """Messages meant for the server."""
 
-    preferred_mobile: Address = field(init=False)
+    preferred_mobile: Optional[Address] = field(init=False, default=None)
 
     # TODO: Use ttl aswell as the coordinates as a metric to determine whether a node is stale.
 
@@ -68,6 +66,7 @@ class EdgeNode:
         return super().__hash__()
 
     def __post_init__(self):
+        super(EdgeNode, self).__init__()
         logging.basicConfig(
             level=self.level, format='%(levelname)s: %(message)s')
 
@@ -95,8 +94,13 @@ class EdgeNode:
         :return: The data to be send in the KALIVE messages.
         """
 
-        ip_src = ip_address(self.gateway_dtn_address).exploded.encode('utf-8')
-        ip_src = struct.pack('!16s', ip_src)
+        ip_src = ip_address(self.gateway_dtn_address).exploded
+        ip_dest = ip_address(MCAST_GROUP).exploded
+
+        # ip_src = ip_address(self.gateway_dtn_address).exploded.encode('utf-8')
+        # ip_src = struct.pack('!16s', ip_src)
+        # ip = ip_address(MCAST_GROUP).exploded.encode('utf-8')
+        # ip_dest = struct.pack('!16s', ip)
 
         data = bytes(str(self.position[0]) +
                      ',' + str(self.position[1]), 'utf-8')
@@ -104,11 +108,8 @@ class EdgeNode:
         lobby_uuid = ""  # we won't have a lobby_id, this is for DTN purposes
         player_uuid = ""  # we won't have a player_id, this is for DTN purposes
 
-        ip = ip_address(MCAST_GROUP).exploded.encode('utf-8')
-        ip_dest = struct.pack('!16s', ip)
-
-        payload = Payload(KALIVE, data, lobby_uuid,
-                          player_uuid, 0, ip_src, ip_dest)
+        payload = Payload(GKALIVE, data, lobby_uuid,
+                          player_uuid, 0, inet_pton(AF_INET6, ip_src), inet_pton(AF_INET6, ip_dest), MCAST_PORT)
 
         return payload.to_bytes()
 
@@ -125,11 +126,10 @@ class EdgeNode:
     @cached_property
     def in_socket(self) -> socket:
         """
-        The socket through which the gateway node receives messages from the DTN.
+        The socket through which the gateway node receives messages from the server.
         """
         in_sock = socket(AF_INET6, SOCK_DGRAM)
         in_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-        in_sock.setsockopt(SOL_SOCKET, SO_REUSEPORT, 1)
         in_sock.bind(('', DEFAULT_PORT))
         in_sock.settimeout(2)
         return in_sock
@@ -137,12 +137,11 @@ class EdgeNode:
     @cached_property
     def out_socket(self) -> socket:
         """
-        The socket through which the gateway node sends messages to the DTN.
+        The socket through which the gateway node sends messages to the server.
         """
         out_sock = socket(AF_INET6, SOCK_DGRAM)
         out_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-        out_sock.setsockopt(SOL_SOCKET, SO_REUSEPORT, 1)
-        out_sock.bind(('', DEFAULT_PORT))
+        out_sock.bind(('', DEFAULT_PORT+1))
         out_sock.settimeout(2)
         return out_sock
 
@@ -174,7 +173,7 @@ class EdgeNode:
         """
 
         while self.running:
-            logging.info('Broadcasting KALIVE')
+            #logging.info('Broadcasting KALIVE')
             # TODO: Requires all mobiles nodes to use the same port? Check this.
             self.msender.sendto(self.kalive, self.mcast_addr)
             time.sleep(1)
@@ -186,19 +185,17 @@ class EdgeNode:
         try:
             # only mobile nodes send data in the KALIVE messages
             if payload.data is not None:
-
-                if addr in self.mobile_nodes:
-                    timestamp = time.time()
-                    hops = 3 - payload.ttl
-                    # payload's data to str
-                    _x, _y = payload.data.decode('utf-8').split(',')
-                    position = (float(_x), float(_y))
-                    # get distance between the node and the gateway node
-                    distance = get_node_distance(position, self.position)
-                    # update the node's data
-                    self.mobile_nodes[addr] = (
-                        distance, position, timestamp, hops)
-                    logging.info('Received KALIVE from {}'.format(addr))
+                timestamp = time.time()
+                hops = 3 - payload.ttl
+                # payload's data to str
+                _x, _y = payload.data.decode('utf-8').split(',')
+                position = (float(_x), float(_y))
+                # get distance between the node and the gateway node
+                distance = get_node_distance(position, self.position)
+                # update the node's data
+                self.mobile_nodes[addr] = (
+                    distance, position, timestamp, hops)
+                logging.debug('Received KALIVE from {}'.format(addr))
         except Exception as e:
             logging.error('Failed to handle KALIVE message: {}'.format(e))
 
@@ -246,29 +243,37 @@ class EdgeNode:
         """
         Handles metric updates.
         """
+
+        while self.preferred_mobile is None:
+            time.sleep(0.01)
+
+        self.last_update = time.time()
         while self.running:
             # Every 5 seconds update the preffered mobile node and set it's address as the default.
-            if time.time() - self.last_update > 5:
+            if time.time() - self.last_update > TIMEOUT:
                 self.last_update = time.time()
 
                 self.preferred_mobile = self._get_preferred_node()
-                logging.info('Preferred mobile node is {}'.format(
-                    self.preferred_mobile[0]))
+                # print(self.preferred_mobile)
+                # logging.info('Preferred mobile node is {}'.format(
+                #    self.preferred_mobile[0]))
 
             time.sleep(1)
 
     def _handle_incoming_dtn(self):
         """
         Handles incoming IPv6 messages.
-
-
         """
         while self.running:
             try:
                 data, addr = self.dtn_sock.recvfrom(1500)
-                logging.info('Received {} from {}'.format(data, addr))
 
                 address = (addr[0], addr[1])
+
+                if address[0] == inet_ntop(AF_INET6, self.gateway_dtn_address):
+                    continue
+
+                logging.debug('Received from {}'.format(addr))
 
                 payload = Payload.from_bytes(data)
 
@@ -278,7 +283,15 @@ class EdgeNode:
                     continue
 
                 if payload.is_kalive:
+
                     payload = self.handle_kalive(address, payload)
+
+                    if payload.lobby_port != MCAST_PORT:
+                        payload.destination = inet_pton(
+                            AF_INET6, ip_address(self.server_address[0]).exploded)
+
+                        self.outgoing_server.add_entry(
+                            address, payload)
 
             except timeout:
                 continue
@@ -300,39 +313,40 @@ class EdgeNode:
         while self.running:
             try:
                 data, addr = self.in_socket.recvfrom(1500)
-                logging.info('Received {} from {}'.format(data, addr))
 
                 address = (addr[0], addr[1])
 
+                if self.preferred_mobile is None:
+                    self.preferred_mobile = address
+
                 payload = Payload.from_bytes(data)
-                logging.debug(
-                    'Received payload with type: {}'.format(payload.type_str))
+                logging.info(
+                    'Received payload: {} {}'.format(payload.type, addr[0]))
 
                 # Figure whether the message is from the server or from a mobile node
-                if address == self.server_address:
+                #print("addresses ",address[0],self.server_address[0])
+                if address[0] == self.server_address[0]:
+                    logging.info('Received message from server.')
                     # if the message is an ack, remove the data from the outgoing_server cache
                     if payload.is_ack:
                         # the message's destination is the address of the sender of the original message
                         destination = (payload.short_destination, DEFAULT_PORT)
 
-                        self.outgoing_server.purge_entries(
-                            payload.seq_num, destination)
+                        self.outgoing_server.purge_entry(
+                            destination, payload)
 
-                    self.outgoing_mobile.add_entry(
-                        payload.seq_num, address, payload)
-                    logging.info('Received message from server.')
+                    self.outgoing_mobile.add_entry(address, payload)
 
                 else:
                     # handle ACK messages
                     if payload.is_ack:
                         destination = (payload.short_destination, DEFAULT_PORT)
 
-                        self.outgoing_mobile.purge_entries(
-                            payload.seq_num, destination)
+                        self.outgoing_mobile.purge_entry(
+                            destination, payload)
 
-                    with self.outgoing_srv_lock:
-                        self.outgoing_server.add_entry(
-                            payload.seq_num, address, payload)
+                    self.outgoing_server.add_entry(
+                        address, payload)
                     logging.info(
                         'Received message from mobile node meant for server.')
 
@@ -348,26 +362,30 @@ class EdgeNode:
         Handles the outgoing messages.
         """
 
+        while self.preferred_mobile is None:
+            time.sleep(0.01)
+
         while self.running:
             # Send messages to the server
-            outgoing = []
 
-            with self.outgoing_srv_lock:
-                outgoing = self.outgoing_server.get_entries_not_sent()
+            outgoing = self.outgoing_server.get_entries_not_sent()
 
-            for (addr, payload, _) in outgoing:
-                logging.debug('Sending payload to {}'.format(addr))
-                self.out_socket.sendto(payload.to_bytes(), addr)
+            # print("outgoing",outgoing)
+
+            for (addr, payload) in outgoing:
+                #logging.info('Sending payload to {} {} {}'.format(payload.short_destination,payload.lobby_port,payload.type))
+                self.out_socket.sendto(
+                    payload.to_bytes(), (payload.short_destination, payload.lobby_port))
 
             # Send messages to the mobile nodes
             outgoing = self.outgoing_mobile.get_entries_not_sent()
 
             # get the preferred mobile node
-            out_addr = self.preferred_mobile
+            out_addr = (self.preferred_mobile[0], DEFAULT_PORT)
 
-            for (addr, payload, _) in outgoing:
-                logging.debug(
-                    'Sending payload to {} through {}.'.format(addr, out_addr))
+            for (addr, payload) in outgoing:
+                logging.info('Sending payload to {} {}.'.format(
+                    out_addr, payload.type))
                 self.out_socket.sendto(payload.to_bytes(), out_addr)
 
             # TODO: Requires two changes that I can think of right now.
@@ -398,6 +416,10 @@ class EdgeNode:
         Thread(target=self._handle_outgoing).start()
         logging.info('Handle outgoing thread started')
         Thread(target=self._handle_cache_timeout).start()
+        logging.info('Handle incoming dtn thread started')
+        Thread(target=self._handle_incoming_dtn).start()
+        logging.info('Handle metrics thread started')
+        Thread(target=self._handle_metric_updates).start()
 
         # Keep the main thread alive
         while self.running:
@@ -416,14 +438,14 @@ class EdgeNode:
         outgoing_mobile = self.outgoing_mobile.get_entries_not_sent() + \
             self.outgoing_mobile.get_entries_sent()
 
-        for (_, payload, _) in outgoing_server:
+        for (_, payload) in outgoing_server:
             logging.debug('Sending {} to {}'.format(
                 payload, self.server_address))
             self.out_socket.sendto(payload.to_bytes(), self.server_address)
 
         out_addr = self._get_preferred_node()
 
-        for (addr, payload, _) in outgoing_mobile:
+        for (addr, payload) in outgoing_mobile:
             logging.debug('Sending {} to {} through {}.'.format(
                 payload, addr, out_addr))
             self.out_socket.sendto(payload.to_bytes(), out_addr)

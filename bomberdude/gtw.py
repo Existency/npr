@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 import argparse
-from client.networking import NetClient
-from client.client import Client
+from common.types import DEFAULT_PORT
+from gateway.gateway import EdgeNode
 from common.core_utils import get_node_ipv6, get_node_path
 from logging import INFO, DEBUG, ERROR, WARNING
 
@@ -11,11 +11,9 @@ if __name__ == '__main__':
     Start the bomberdude server.
     """
     parser = argparse.ArgumentParser(description='Bomberdude server.')
-    parser.add_argument('-n', '--name', type=str, default='anonymous')
     parser.add_argument('-a', '--address', type=str, required=True)
     parser.add_argument('-i', '--id', type=str, required=True)
     parser.add_argument('-l', '--level', type=str, default='info',)
-    parser.add_argument('-g', '--gateway', type=str)
 
     args = parser.parse_args()
 
@@ -41,12 +39,8 @@ if __name__ == '__main__':
         print("Node's ipv6 not found")
         exit(1)
 
-    print("gtw", args.gateway)
-    
-    pymenu = Client(args, node_path, node_ipv6)
-    pymenu.start_game()
+    print("node_ipv6", node_ipv6)
+    gateway = EdgeNode((args.address, DEFAULT_PORT),
+                       node_path, node_ipv6, level=log_lvl)
 
-    # cli = NetClient((args.address, 8080), args.port,
-    #                 level=log_lvl, npath=node_path)
-    # cli.join_server(args.id)
-    # cli.start()
+    gateway.start()

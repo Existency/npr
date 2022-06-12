@@ -16,7 +16,8 @@ REDIRECT = 0x06  # TODO: Deprecate this functionality.
 ERROR = 0xA0
 # Utility types
 KALIVE = 0xC0
-ACK = 0xC1
+GKALIVE = 0xC1  # gateway keepalive
+ACK = 0xC2
 # Game types
 ACTIONS = 0xD0
 STATE = 0xD1
@@ -30,12 +31,13 @@ ptypes = {
     REDIRECT: 'REDIRECT',  # TODO: Deprecate this functionality.
     ERROR: 'ERROR',
     KALIVE: 'KALIVE',
+    GKALIVE: 'GKALIVE',
     ACK: 'ACK',
     ACTIONS: 'ACTIONS',
     STATE: 'STATE'
 }
 
-pattern: str = '!Bl4s4slB16s16s'
+pattern: str = '!Bl4s4slB16s16sl'
 """
     The pattern used to (un)pack the payload.
 
@@ -49,11 +51,12 @@ pattern: str = '!Bl4s4slB16s16s'
     - B: The payload's ttl.             (1 byte)
     - 16s: The payload's source.         (16 bytes)
     - 16s: The payload's destination.    (16 bytes)
+    - l : Lobby port                    (2 bytes)
     ----------------------------------------------
-    Total:                               50 bytes
+    Total:                               52 bytes
 """
 
-OFFSET: int = 50  # 1 + 4 + 4 + 4 + 4 + 1 + 16 + 16
+OFFSET: int = 54  # 1 + 4 + 4 + 4 + 4 + 1 + 16 + 16
 """The header's offset in bytes."""
 
 
@@ -90,6 +93,8 @@ class Payload:
     """The source of the payload. (16 Bytes)"""
     destination: bytes
     """The destination of the payload. (16 Bytes)"""
+    lobby_port: int 
+    """port of the lobby. 2 bytes"""
     ttl: int = field(default=3)
     """The time to live of the packet, capped at 3. (1 Byte)"""
     # TODO: Include the addresses of destination and source nodes.
@@ -160,6 +165,13 @@ class Payload:
         return self.type == ERROR
 
     @cached_property
+    def is_gkalive(self) -> bool:
+        """
+        Checks if the payload has a gateway keepalive type.
+        """
+        return self.type == GKALIVE
+
+    @cached_property
     def is_kalive(self) -> bool:
         """
         Checks if the payload is a kalive.
@@ -200,6 +212,7 @@ class Payload:
         """
         Retrieves the short representation of the destination.
         """
+        #print("destination",self.destination)
         return ip_address(self.destination).compressed
 
     @cached_property
@@ -219,10 +232,10 @@ class Payload:
         """
         header = data[:OFFSET]
         try:
-            type, length, lobby, player, seq_num, ttl, source, destination = struct.unpack(
+            type, length, lobby, player, seq_num, ttl, source, destination, port = struct.unpack(
                 pattern, header)
 
-            return cls(type, data[OFFSET: length+OFFSET], lobby.decode(), player.decode(), seq_num, source, destination, ttl)
+            return cls(type, data[OFFSET: length+OFFSET], lobby.decode(), player.decode(), seq_num, source, destination, port, ttl)
 
         except Exception as e:
             raise ValueError(e.__repr__())
@@ -237,11 +250,16 @@ class Payload:
         lobby_bytes = bytes(self.lobby_uuid, 'utf-8')
         player_bytes = bytes(self.player_uuid, 'utf-8')
 
-        # print the type of pattern, lobby_bytes, player_bytes
-        print(type(pattern))
-        print(type(lobby_bytes), type(player_bytes))
-        print(type(self.destination), type(self.source))
-        print(type(self.data))
+        #print the type of pattern, lobby_bytes, player_bytes
+        #print(type(self.type))
+        #print(type(self.length))
+        #print(type(lobby_bytes))
+        #print(type(player_bytes))
+        #print(type(self.seq_num))
+        #print(type(self.ttl))
+        #print(type(self.source))
+        #print(type(self.destination))
+        #print(type(self.lobby_port))
 
         return struct.pack(
             pattern,
@@ -252,5 +270,6 @@ class Payload:
             self.seq_num,
             self.ttl,
             self.source,
-            self.destination
+            self.destination,
+            self.lobby_port
         ) + self.data

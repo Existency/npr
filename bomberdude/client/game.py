@@ -1,3 +1,5 @@
+from ipaddress import ip_address
+from socket import AF_INET6, inet_pton
 from numpy import tile
 import pygame
 import sys
@@ -10,6 +12,7 @@ from .enemy import Enemy
 from .algorithm import Algorithm
 from common.payload import ACTIONS, KALIVE, REJOIN, STATE, Payload, ACCEPT, LEAVE, JOIN, REDIRECT, REJECT
 from common.state import Change
+from common.types import DEFAULT_PORT, TIMEOUT
 from threading import Thread
 
 TILE_WIDTH = 40
@@ -355,11 +358,16 @@ def sendAction(cli,action,x,y):
     
     data = Change((int(x/4),int(y/4),cli.player_id+9),(int(move_x/4),int(move_y/4),tile_id))
     print('sent action',data)
+    
+    destination = inet_pton(AF_INET6, ip_address(cli.lobby_addr[0]).exploded )
+    
     cli.seq_num += 1
     payload = Payload(ACTIONS, data.to_bytes(), cli.lobby_uuid,
-                    cli.player_uuid, cli.seq_num)
+                    cli.player_uuid, cli.seq_num,cli.byte_address, destination, cli.lobby_addr[1])
     
-    cli.unicast(payload.to_bytes())
+    cli.client_cache.add_entry(
+                        (payload.short_destination, DEFAULT_PORT), payload)
+    #cli.unicast(payload.to_bytes())
     
 
 def main(cli):
@@ -423,6 +431,13 @@ def main(cli):
 
         update_bombs(cli,dt)
     game_over(cli)
+    
+def check_timeout(cli):
+    if time.time() - cli.last_kalive > TIMEOUT:
+        print('Timed Out')
+        for e in enemy_list:
+            e.life = False
+        player.life = False
 
 def sync_boxes(cli):
     state_boxes = cli.gamestate.boxes.keys()
@@ -437,6 +452,7 @@ def sync_boxes(cli):
     
 
 def update_bombs(cli,dt):
+    check_timeout(cli)
     for b in bombs:
         b.update(dt)
         if b.time < 1:
@@ -486,6 +502,7 @@ def game_over(cli):
             if en.life:
                 count += 1
                 winner = en.algorithm.name
+        
         if count == 1:
             draw()
             textsurface = font.render(winner + " wins", False, (0, 0, 0))
@@ -505,10 +522,12 @@ def game_over(cli):
             time.sleep(2)
             break
         draw()
+        
+        
+        #cli.terminate('Game Over')
 
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
                 sys.exit(0)
-    explosions.clear()
-    enemy_list.clear()
-    ene_blocks.clear()
+                
+

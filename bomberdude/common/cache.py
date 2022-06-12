@@ -4,14 +4,14 @@ from threading import Lock
 from typing import List, Tuple, Dict
 import logging
 import time
+from copy import copy
 from .payload import Payload
 from .types import Address, SeqNum, Time
 
-CacheEntry = Tuple[Address, Payload, Time]
-"""A line of cache, contains the address, payload, time and whether it was sent or not."""
-
-InnerCache = Dict[SeqNum, CacheEntry]
-"""A Node's cache."""
+AddrCache = List[Tuple[Payload, Time]]
+"""Each address has a list of tuples of payloads and timestamps."""
+InnerCache = Dict[Address, AddrCache]
+"""A node's cache."""
 
 
 @dataclass
@@ -19,8 +19,6 @@ class Cache:
     """
     The cache is the main component of the algorithm.
     """
-    # seq_num: (address, payload, timestamp)
-    # TODO: change from a HashMap<seqnum, (addr, payload, timestamp)> to HashMap<address, Vec<(payload, timestamp)>>
     cache_timeout: int
     level: int = field(default=logging.INFO)
     not_sent: InnerCache = field(default_factory=dict, init=False)
@@ -35,100 +33,117 @@ class Cache:
     def __hash__(self) -> int:
         return hash(self.sent)
 
-    def purge_timeout(self):
+    def purge_timeout(self) -> List[Tuple[Address, Payload]]:
         """
-        Purge all entries that have timed out.
+        Purge all entries that have timed out and returns them for one last try.
         """
-
         cur_time = time.time()
+        logging.debug(f"Purging entries that have timed out")
+        entries = []
+        for addr, payloads in self.sent.copy().items():
+            for payload, timestamp in payloads:
+                if timestamp + self.cache_timeout < cur_time:
+                    entries.append((addr, payload))
+                    self.purge_entry(addr, payload)
 
-        with self.lock:
-            for seq_num, (addr, _, timestamp) in self.sent.items():
-                if cur_time - timestamp > self.cache_timeout:
-                    logging.debug(
-                        f"Purging entry {seq_num} meant for {addr} from cache")
+        for addr, payloads in self.not_sent.copy().items():
+            for payload, timestamp in payloads:
+                if timestamp + self.cache_timeout < cur_time:
+                    entries.append((addr, payload))
+                    self.purge_entry(addr, payload)
 
-    def purge_entries(self, seq_num: SeqNum, address: Address):
+        return entries
+
+    def purge_entry(self, address: Address, payload: Payload):
         """
-        Purge a specific entry from the cache.
+        Removes a specific entry from the cache.
 
-        :param seq_num: The sequence number of the entry to purge.
         :param address: The address of the entry to purge.
         """
-        with self.lock:
-            # purge the entry that matches the sequence number and address
-            for seq_num, (addr, _, _) in self.sent.items():
-                if seq_num == seq_num and addr == address:
-                    logging.debug(f"Purging entry {seq_num} from cache")
-                    # fun fact, did you know that del doesn't throw exceptions? Keeps them silent. :D
-                    del self.sent[seq_num]
-                    break
+        logging.debug(f"Purging entry from {address}'s sent cache")
+        if address in self.sent:
+            self.sent[address] = [
+                (p, t) for p, t in self.sent[address] if p != payload]
 
-    def add_sent_entry(self, seq_num: SeqNum, address: Address, payload: Payload):
+        if address in self.not_sent:
+            self.not_sent[address] = [
+                (p, t) for p, t in self.not_sent[address] if p != payload]
+
+    def add_sent_entry(self, address: Address, payload: Payload):
         """
         Add an entry to the sent cache.
 
-        :param seq_num: The sequence number of the entry.
         :param address: The address of the entry.
         :param payload: The payload of the entry.
         """
-        with self.lock:
-            logging.debug(f"Adding entry {seq_num} to cache")
-            self.sent[seq_num] = (address, payload, time.time())
+        logging.debug(f"Adding entry to {address}'s sent cache")
+        if address in self.sent:
+            self.sent[address].append((payload, time.time()))
+        else:
+            self.sent[address] = [(payload, time.time())]
 
-    def add_entry(self, seq_num: SeqNum, address: Address, payload: Payload):
+    def add_entry(self, address: Address, payload: Payload):
         """
         Add an entry to the not_sent cache.
 
-        :param seq_num: The sequence number of the entry.
         :param address: The address of the entry.
         :param payload: The payload of the entry.
         """
-        with self.lock:
-            logging.debug(f"Adding entry {seq_num} to cache")
-            self.not_sent[seq_num] = (address, payload, time.time())
+        logging.debug(f"Adding entry to {address}'s not_sent cache")
+        if address in self.not_sent:
+            self.not_sent[address].append((payload, time.time()))
+        else:
+            self.not_sent[address] = [(payload, time.time())]
 
-    def get_entries_not_sent(self) -> List[CacheEntry]:
+    def get_entries_not_sent(self) -> List[Tuple[Address, Payload]]:
         """
-        Get all entries that weren't sent.
+        Get all entries that weren't sent and adds them to the sent cache.
+        Removes them from the not_sent cache.
 
         :param address: The address to get entries from.
         :return: A list of entries.
         """
-        with self.lock:
-            entries = []
-            for seq_num, (addr, payload, time) in self.not_sent.items():
-                # move the entry to the sent cache and append it to the list
-                logging.debug(f"Getting entry {seq_num} from cache")
-                self.sent[seq_num] = (addr, payload, time)
-                entries.append((addr, payload, time))
-                del self.not_sent[seq_num]
-            return entries
+        entries = []
+        for addr, payloads in self.not_sent.copy().items():
+            for payload, _ in payloads:
+                entries.append((addr, payload))
+                self.add_sent_entry(addr, payload)
+                self.purge_entry(addr, payload)
 
-    def get_entries_sent_by(self, address: Address) -> List[CacheEntry]:
+        return entries
+
+    def get_entries_sent_by(self, address: Address) -> List[Payload]:
         """
         Get all entries from a specific address.
 
         :param address: The address to get entries from.
         :return: A list of entries.
         """
-        with self.lock:
-            entries = []
-            for seq_num, (addr, payload, time) in self.sent.items():
-                if addr == address:
-                    logging.debug(f"Getting entry {seq_num} from cache")
-                    entries.append((addr, payload, time))
-            return entries
+        entries = []
+        for addr, payloads in self.sent.items():
+            if addr == address:
+                for payload, _ in payloads:
+                    entries.append(payload)
 
-    def get_entries_sent(self) -> List[CacheEntry]:
+        return entries
+
+    def get_entries_sent(self) -> List[Tuple[Address, Payload]]:
         """
         Get all entries from all addresses.
 
         :return: A list of entries.
         """
-        with self.lock:
-            entries = []
-            for seq_num, (addr, payload, time) in self.sent.items():
-                logging.debug(f"Getting entry {seq_num} from cache")
-                entries.append((addr, payload, time))
-            return entries
+        entries = []
+        for addr, payloads in self.sent.items():
+            for payload, _ in payloads:
+                entries.append((addr, payload))
+
+        return entries
+
+    def get_all_entries(self) -> List[Tuple[Address, Payload]]:
+        """
+        Retrieves all entries from the cache.
+
+        :return: A list of entries.
+        """
+        return self.get_entries_sent() + self.get_entries_not_sent()

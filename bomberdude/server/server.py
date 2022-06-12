@@ -37,6 +37,7 @@ class Server(Thread):
         self.sock.settimeout(2)
 
         tmp = get_node_ipv6(id)
+        print("node_ipv6", tmp)
 
         if tmp is not None:
             self.byte_address = tmp
@@ -128,7 +129,7 @@ class Server(Thread):
         :param reason: The reason why the connection was denied.
         """
         response = Payload(REJECT, reason.encode('utf-8'), '',
-                           conn.uuid, 0, self.byte_address, conn.byte_address)
+                           conn.uuid, 0, self.byte_address, conn.byte_address, DEFAULT_PORT)
 
         self.sock.sendto(response.to_bytes(), conn.address)
 
@@ -140,11 +141,11 @@ class Server(Thread):
         :param lobby: The lobby the player joined.
         """
         data = lobby.port.to_bytes(2, 'big')
-        print(conn.byte_address)
 
         response = Payload(ACCEPT, data, lobby.uuid, conn.uuid,
-                           0, self.byte_address, conn.byte_address)
+                           0, self.byte_address, conn.byte_address, DEFAULT_PORT)
 
+        print("address", conn.address)
         self.sock.sendto(response.to_bytes(), conn.address)
 
     def handle_data(self, data: bytes):
@@ -180,8 +181,7 @@ class Server(Thread):
             # TODO: This should be better handled. No sanitization is done here!
             name = inc.data.decode('utf-8') if inc.data != b'' else 'anonymous'
 
-            print(inc.source)
-
+            #print("Source address bytes: ", str(inc.source))
             # create a new connection for the client
             conn = Conn(inc.source, name, time.time())
             # add the connection to the lobby

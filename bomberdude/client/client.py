@@ -30,10 +30,15 @@ class Client:
     en3_alg = Algorithm.DIJKSTRA
     show_path = True
 
-    def __init__(self, args, node_path, node_ipv6):
+    def __init__(self, args, node_path, node_ipv6: bytes):
         self.args = args
-        self.cli = NetClient((self.args.address, DEFAULT_PORT),
-                             node_path=node_path, byte_address=node_ipv6)
+
+        if args.gateway is None:
+            self.cli = NetClient((self.args.address, DEFAULT_PORT),
+                                 node_path=node_path, byte_address=node_ipv6)
+        else:
+            self.cli = NetClient((self.args.address, DEFAULT_PORT),
+                                 node_path=node_path, byte_address=node_ipv6, gateway_addr=(args.gateway, DEFAULT_PORT),is_mobile=True)
 
     def change_player(self, value, c):
         #global player_alg
@@ -42,8 +47,11 @@ class Client:
     def run_game(self):
         print("run game")
         self.TILE_SIZE = int(self.INFO.current_h * 0.025)
+        
         game_init(self.show_path, self.player_alg, self.en1_alg,
                   self.en2_alg, self.en3_alg, self.TILE_SIZE, self.cli, self.args)
+        
+        self.cli.dtn_running = False
 
         self.TILE_SIZE = int(self.INFO.current_h * 0.065)
         self.WINDOW_SIZE = (13 * self.TILE_SIZE, 13 * self.TILE_SIZE)

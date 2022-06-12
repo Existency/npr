@@ -1,3 +1,5 @@
+from ipaddress import ip_address
+from socket import AF_INET6, inet_pton
 from matplotlib.pyplot import grid
 import pygame
 import random
@@ -9,6 +11,7 @@ from common.state import Change
 from typing import Tuple, List
 from threading import Lock
 import math, time
+from common.types import DEFAULT_PORT
 
 
 class Enemy:
@@ -42,11 +45,16 @@ class Enemy:
         
 
         data = Change((int(x/4),int(y/4),self.cli.player_id+9),(int(move_x/4),int(move_y/4),tile_id))
+        
+        destination = inet_pton(AF_INET6, ip_address(self.cli.lobby_addr[0]).exploded )
+        
         self.cli.seq_num += 1
         payload = Payload(ACTIONS, data.to_bytes(), self.cli.lobby_uuid,
-                        self.cli.player_uuid, self.cli.seq_num)
+                        self.cli.player_uuid, self.cli.seq_num,self.cli.byte_address, destination, self.cli.lobby_addr[1])
         
-        self.cli.unicast(payload.to_bytes())
+        self.cli.client_cache.add_entry(
+                        (payload.short_destination, DEFAULT_PORT), payload)
+        #self.cli.unicast(payload.to_bytes())
 
     def move(self, map, bombs, explosions, enemy):
 

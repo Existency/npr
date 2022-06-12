@@ -1,11 +1,12 @@
 from ipaddress import ip_address
-from common.types import DEFAULT_PORT
+from common.types import DEFAULT_PORT, TIMEOUT
 from common.uuid import uuid
 from dataclasses import dataclass, field
 from logging import Logger
-from socket import socket
+from socket import AF_INET6, inet_ntop, inet_pton, socket
 from typing import Tuple
 import time
+# import struct
 
 
 @dataclass
@@ -57,10 +58,16 @@ class Conn:
 
         :return: True if the connection has timed out, False otherwise.
         """
-        return int(time.time()) - self.last_kalive > 5
+        return int(time.time()) - self.last_kalive > TIMEOUT
 
     def __post_init__(self):
-        self.address = (ip_address(self.byte_address).compressed, DEFAULT_PORT)
+        # use inet_ntop to convert the byte address to a string
+        self.address = (inet_ntop(AF_INET6, self.byte_address), DEFAULT_PORT)
+        # test2 = struct.unpack('!8H', self.byte_address)
+        # string_ints = [str(int) for int in test2]
+        # test2 = ':'.join(string_ints)
+        # self.address = (ip_address(test2).compressed, DEFAULT_PORT)
+        print("Connection self.address", self.address[0])
         self.uuid = uuid()
         self.logger = Logger('Connection {self.uuid}')
         self.logger.info('Connection {self.uuid} init\'d')

@@ -11,9 +11,9 @@ import time
 import struct
 from typing import Tuple, List
 from threading import Thread, Lock
-from socket import socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, timeout, IPPROTO_IPV6, IPV6_MULTICAST_HOPS
+from socket import IPPROTO_UDP, IPV6_JOIN_GROUP, getaddrinfo, socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, timeout, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, inet_pton
 import json
-from common.types import DEFAULT_PORT, Address, MobileMap, Position
+from common.types import DEFAULT_PORT, MCAST_GROUP, MCAST_PORT, TIMEOUT, Address, MobileMap, MobileMetrics, Position
 
 InboundQueue = List[Change]
 """A list of changes to be applied to the game state."""
@@ -51,6 +51,10 @@ class NetClient(Thread):
     """The socket used to receive data."""
     out_sock: socket = field(init=False)
     """The socket used to send data."""
+
+    queue_inbound: List[Payload] = field(
+        init=False, default_factory=list)
+
     # cache
     client_cache: Cache = field(init=False)
     """Cache used to store the last sent payloads."""
@@ -72,14 +76,16 @@ class NetClient(Thread):
     """Sequence number for the client"""
 
     # This only exists in mobile clients
-    mobile_map: MobileMap = field(init=False)
+    mobile_map: MobileMap = field(init=False, default_factory=dict)
     """Information related to other mobile nodes"""
     preferred_mobile: Address = field(init=False)
     """The preferred mobile node to send data to."""
+    gateway_addr: Address = field(default=('', 0))
+    """The gateway's address. This property is used by mobile nodes only."""
+    gateway_map: MobileMap = field(init=False, default_factory=dict)
+    """Information about all the gateways in the network."""
     is_mobile: bool = field(default=False)
     """Whether this client is a mobile node."""
-    gateway_addr: Address = field(init=False, default=('', 0))
-    """The gateway's address. This property is used by mobile nodes only."""
 
     @cached_property
     def msender(self) -> socket:
@@ -91,6 +97,18 @@ class NetClient(Thread):
         sock.setsockopt(IPPROTO_IPV6, IPV6_MULTICAST_HOPS, ttl)
         return sock
 
+    @cached_property
+    def dtn_sock(self) -> socket:
+        """
+        The socket through which the gateway node sends and receives messages from the DTN.
+        """
+        sock = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP)
+        sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+        sock.bind(('', MCAST_PORT))
+        group = inet_pton(AF_INET6, MCAST_GROUP) + struct.pack('@I', 0)
+        sock.setsockopt(IPPROTO_IPV6, IPV6_JOIN_GROUP, group)
+        return sock
+
     def __hash__(self) -> int:
         return super().__hash__()
 
@@ -99,24 +117,73 @@ class NetClient(Thread):
         self.gamestate = GameState(self.state_lock, {}, {})
         self.client_cache = Cache(self.cache_timeout, self.log_level)
 
+        logging.basicConfig(
+            level=self.log_level, format='%(levelname)s: %(message)s')
+
         if self.is_mobile:
+            self.dtn_running = True
             # if gateway_addr is not set, this is an error
             if self.gateway_addr == ('', 0):
                 logging.error("Gateway address not set on mobile node.")
                 exit(1)
             self.preferred_mobile = self.gateway_addr
 
-        logging.basicConfig(
-            level=self.log_level, format='%(levelname)s: %(message)s')
+            Thread(target=self._handle_dtn_input).start()
+            logging.info('DTN input handler started.')
+            Thread(target=self._broadcast_kalive_mobile).start()
+            logging.info('Kalive (mobile) handler started.')
 
-        logging.info('Client init\'d')
+            while not (self.gateway_map and self.mobile_map):
+                # wait for at least one gateway and one mobile node to join
+                time.sleep(0.1)
+
+            logging.info('Gateway and Mobile Map init\'d.', self.gateway_map)
+
+        logging.info('Client init\'d.')
 
     @property
     def location(self) -> Position:
         """
         Method used to get the current location of the client.
         """
-        return get_node_xy(self.node_path)
+        position = (0,0)
+        
+        try:
+            position = get_node_xy(self.node_path)
+        
+        except Exception as i:
+            print(i)
+        
+        return position
+        
+    @property
+    def closest_gateway(self) -> Tuple[Address, MobileMetrics]:
+        """
+        Returns the closest gateway to the client from the gateway map.
+        """
+        # recalculate and update each gateway's distance to the client
+        for (addr, metrics) in self.gateway_map.items():
+            self.gateway_map[addr] = self.gateway_update(metrics)
+
+        closest = min(self.gateway_map.items(), key=lambda x: x[1][0])
+
+        return (closest[0], closest[1])
+
+    @cached_property
+    def lobby_byte_address(self) -> bytes:
+        """
+        Returns the byte address of the lobby.
+        """
+        # use inet_pton
+        return inet_pton(AF_INET6, self.lobby_addr[0])
+
+    def gateway_update(self, metrics: MobileMetrics) -> MobileMetrics:
+        """
+        Updates the gateway's distance to the client.
+        """
+        (_, pos, time, hops) = metrics
+        dist = get_node_distance(self.location, pos)
+        return (dist, pos, time, hops)
 
     def join_server(self, lobby_id: str):
         """
@@ -133,14 +200,17 @@ class NetClient(Thread):
         out_sock.bind(('', DEFAULT_PORT+1))
         out_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         out_sock.settimeout(2)
-        print(self.byte_address)
+
+        #print(self.byte_address)
+
         payload = Payload(JOIN, b'', lobby_id, '',
-                          self.seq_num, self.byte_address, self.byte_address)
+                          self.seq_num, self.byte_address, self.byte_address, DEFAULT_PORT)
 
         retry_payload = Payload(REJOIN, b'', lobby_id,
-                                '', self.seq_num, self.byte_address, self.byte_address)
+                                '', self.seq_num, self.byte_address, self.byte_address, DEFAULT_PORT)
         retry_bytes = retry_payload.to_bytes()
         self.seq_num = + 1
+        #print("address: ", self.auth_ip)
         in_sock.sendto(payload.to_bytes(), self.auth_ip)
 
         _try = 0
@@ -175,6 +245,7 @@ class NetClient(Thread):
 
                         logging.info('Client joined lobby %s', self.lobby_uuid)
                         self.last_kalive = time.time()  # set kalive to now
+                        self.running = True
                         return True
 
                     elif data.type == REJECT:
@@ -202,14 +273,8 @@ class NetClient(Thread):
                 in_sock.sendto(retry_bytes, self.auth_ip)
 
             time.sleep(0.25)
-
-    @cached_property
-    def lobby_byte_address(self) -> bytes:
-        """
-        Returns the byte address of the lobby.
-        """
-        return struct.pack('!8H', *[int(part, 10)
-                                    for part in ip_address(self.lobby_addr[0]).exploded.split(':')])
+            
+        
 
     def reset(self):
         """
@@ -227,14 +292,12 @@ class NetClient(Thread):
         self.started = False
         self.start_time = 0.0
 
-    # TODO: This will be needed later on
-    def multicast(self, data: bytes):
+    @cached_property
+    def mcast_addr(self) -> Address:
         """
-        Method used to broadcast data using an IPv6 multicast address.
-
-        :param data: The data to be broadcasted.
+        Returns the multicast address of the lobby.
         """
-        self.out_sock.sendto(data, ('ff02::1', DEFAULT_PORT))
+        return (getaddrinfo(MCAST_GROUP, None)[0][4][0], MCAST_PORT)
 
     def unicast(self, data: bytes):
         """
@@ -242,7 +305,6 @@ class NetClient(Thread):
 
         :param data: The payload to be sent.
         """
-        # print(self.seq_num)
         sent = self.out_sock.sendto(data, self.lobby_addr)
         logging.debug('Sent %d bytes to server', sent)
 
@@ -281,26 +343,28 @@ class NetClient(Thread):
 
         This message is used to broadcast the kalive to the server in a mobile context.
         """
-        byte_address = struct.pack('!8H', *[int(part, 10)
-                                            for part in ip_address('ff02::1').exploded.split(':')])
+        byte_address = inet_pton(AF_INET6, MCAST_GROUP)
 
-        # mobile clients
-        while self.running:
+        while self.dtn_running:
             # check whether last kalive from server was more than 5 seconds ago
-            if time.time() - self.last_kalive > 5:
-                logging.warning('Server not responding...')
+            #if time.time() - self.last_kalive > 5:
+            #    logging.warning('Server not responding...')
 
             location = self.location
 
             data = bytes(str(location[0]) +
                          ',' + str(location[1]), 'utf-8')
 
-            payload = Payload(KALIVE, data, self.lobby_uuid,
-                              self.player_uuid, self.seq_num, self.byte_address, byte_address)
+            if self.running:
+                payload = Payload(KALIVE, data, self.lobby_uuid, self.player_uuid, self.seq_num,
+                                self.byte_address, byte_address, self.lobby_addr[1])
+            else:
+                payload = Payload(KALIVE, data, '', '', self.seq_num,
+                                    self.byte_address, byte_address, MCAST_PORT)
 
-            self.seq_num += 1
-            self.multicast(payload.to_bytes())
-            time.sleep(1)
+            self.msender.sendto(payload.to_bytes(), self.mcast_addr)
+            #print("Sending Kalive to ",self.mcast_addr)
+            time.sleep(0.5)
 
     def _broadcast_kalive_wired(self):
         """
@@ -316,11 +380,11 @@ class NetClient(Thread):
         # non mobile clients
         while self.running:
             # check whether last kalive from server was more than 5 seconds ago
-            if time.time() - self.last_kalive > 5:
+            if time.time() - self.last_kalive > TIMEOUT:
                 logging.warning('Server not responding...')
 
             payload = Payload(KALIVE, data, self.lobby_uuid,
-                              self.player_uuid, self.seq_num, self.byte_address, self.lobby_byte_address)
+                              self.player_uuid, self.seq_num, self.byte_address, self.lobby_byte_address,self.lobby_addr[1])
 
             self.seq_num += 1
             self.unicast(payload.to_bytes())
@@ -333,7 +397,7 @@ class NetClient(Thread):
         This method is used to automatically update the prefered destination node.
         """
         while self.running:
-            time.sleep(5)
+            time.sleep(1)
             # Every 5 seconds update the preffered mobile node and set it's address as the default.
             self.preferred_mobile = self._get_preferred_node()
             logging.info('Preferred mobile node is {}'.format(
@@ -345,13 +409,16 @@ class NetClient(Thread):
 
         :return: The node with the lowest distance to the gateway node aswell as a low number of hops.
         """
+        # get the closest gateway to our node
+        (gateway_addr, (dist, _, _, hops)) = self.closest_gateway
 
         # get the gateway node
-        (dist, _, _, hops) = self.mobile_map[self.gateway_addr]
+        # (dist, _, _, hops) = self.mobile_map[self.gateway_addr]
 
-        # Important: if the gateway is 1 hop away, always returns the gateway
+        # Important: if we're connected directly to the gateway,
+        #               we want to use it as a preferred node.
         if hops == 3:
-            return self.gateway_addr
+            return gateway_addr
 
         distances = [self.mobile_map[addr][0] for addr in self.mobile_map]
 
@@ -361,13 +428,13 @@ class NetClient(Thread):
         candidates = [
             addr for addr in self.mobile_map if self.mobile_map[addr][0] == min_dist]
 
-        best_candidate = min(candidates, key=lambda x: self.mobile_map[x][3])
-
+        best_candidate = min(candidates, key=lambda x: self.mobile_map[x][0])
+            
         # if the min_dist is no less than 20% larger than the gateway node and has less hops, return the gateway node
-        if min_dist * 1.2 > dist and self.mobile_map[best_candidate][3] >= hops:
+        if min_dist * 1.1 > dist and self.mobile_map[best_candidate][3] >= hops:
             return best_candidate
 
-        return self.gateway_addr
+        return gateway_addr
 
     def _handle_output_mobile(self):
         """
@@ -379,14 +446,15 @@ class NetClient(Thread):
             payloads = self.client_cache.get_entries_not_sent()
 
             # get prefered destination node
-            out_addr = self.preferred_mobile
-
-            for (addr, payload, _) in payloads:
-                logging.debug(
-                    'Sending payload to {} through {}.'.format(addr, out_addr))
+            out_addr = (self.preferred_mobile[0],DEFAULT_PORT)
+        
+            
+            for (addr, payload) in payloads:
+                logging.info('Sending payload to {} through {} {}.'.format(addr, out_addr, payload.type))
+                payload.port = self.lobby_addr[1]
                 self.out_sock.sendto(payload.to_bytes(), out_addr)
-
-            time.sleep(0.1)
+                
+            time.sleep(0.03)
 
     def _handle_output_wired(self):
         """
@@ -397,7 +465,7 @@ class NetClient(Thread):
         while self.running:
             payloads = self.client_cache.get_entries_not_sent()
 
-            for (addr, payload, _) in payloads:
+            for (addr, payload) in payloads:
                 logging.debug(
                     'Sending payload to {}.'.format(addr))
                 self.unicast(payload.to_bytes())
@@ -411,17 +479,32 @@ class NetClient(Thread):
         Handles the data received from the DTN network.
         """
 
-        while self.running:
+        while self.dtn_running:
             try:
-                data, addr = self.msender.recvfrom(1500)
+                data, addr = self.dtn_sock.recvfrom(1500)
 
                 address = (addr[0], addr[1])
                 payload = Payload.from_bytes(data)
+
+                #print(payload.type)
 
                 if payload is None:
                     logging.warning(
                         'Received invalid payload from {}.'.format(address))
                     continue
+
+                if payload.is_gkalive:
+                    _x, _y = payload.data.decode('utf-8').split(',')
+                    position = (float(_x), float(_y))
+                    hops = 3 - payload.ttl
+                    timestamp = time.time()
+                    distance = get_node_distance(position, self.location)
+
+                    self.gateway_map[address] = (
+                        distance, position, timestamp, hops)
+
+                    self.mobile_map[address] = (
+                        distance, position, timestamp, hops)
 
                 if payload.is_kalive:
                     _x, _y = payload.data.decode('utf-8').split(',')
@@ -453,10 +536,12 @@ class NetClient(Thread):
                     continue
 
                 payload = Payload.from_bytes(data)
+                
+                #print("received ", payload.type)
 
                 if payload.is_redirect:
                     self.client_cache.add_entry(
-                        payload.seq_num, (payload.short_destination, DEFAULT_PORT), payload)
+                        (payload.short_destination, DEFAULT_PORT), payload)
 
                 if payload.lobby_uuid == self.lobby_uuid and payload.player_uuid == self.player_uuid:
                     # Parse the payload and check whether it's an event or not
@@ -473,10 +558,10 @@ class NetClient(Thread):
 
                         # Ack the payload
                         ack_payload = Payload(ACK, b'', self.lobby_uuid, self.player_uuid,
-                                              payload.seq_num, self.byte_address, self.lobby_byte_address)
+                                              payload.seq_num, self.byte_address, self.lobby_byte_address, self.lobby_addr[1])
 
                         self.client_cache.add_entry(
-                            payload.seq_num, (payload.short_source, DEFAULT_PORT), ack_payload)
+                            (payload.short_source, DEFAULT_PORT), ack_payload)
 
                     elif payload.is_state and self.started == False:
                         # update the client's state and set the started flag to true
@@ -500,23 +585,16 @@ class NetClient(Thread):
         """
         Main loop of the networking client.
         """
-
-        self.running = True
         Thread(target=self._handle_state).start()
         logging.info('State handler started.')
         Thread(target=self._handle_input).start()
         logging.info('Input handler started.')
 
         if self.is_mobile:
-            Thread(target=self._handle_dtn_input).start()
-            logging.info('DTN input handler started.')
-            Thread(target=self._broadcast_kalive_mobile).start()
-            logging.info('Kalive (mobile) handler started.')
             Thread(target=self._handle_output_mobile).start()
             logging.info('Output (mobile) handler started.')
             Thread(target=self._handle_metrics_update).start()
             logging.info('Metrics update handler started.')
-
         else:
             Thread(target=self._broadcast_kalive_wired).start()
             logging.info('Kalive (wired) handler started.')
@@ -539,7 +617,7 @@ class NetClient(Thread):
         logging.info('Client leaving lobby by user request.')
         # TODO: Fix seq_num across all files
         payload = Payload(LEAVE, b'', self.lobby_uuid,
-                          self.player_uuid, self.seq_num, self.byte_address, b'')
+                          self.player_uuid, self.seq_num, self.byte_address, b'', self.lobby_addr[1])
 
         self.seq_num += 1
         self.unicast(payload.to_bytes())

@@ -225,21 +225,21 @@ class GameState:
         self.state[y][x] = t
         self.state[_y][_x] = _t
         
-        #print('state: ',change)
-        
-        #print(t)
+        # Movement
         if 9 < t and t < 15 and _t < 15:
-            if _t > 15:
-                print('This is not a movement')
             self.players[t-9] = (_x,_y)
         
+        # Bomb placements
         if _t == 2:    
             self.bombs[t-9] = (time.time(), _x, _y)
             
+        # Deaths
         if 109 < _t <115 :  
-            print('popping player:',t-9)  
-            self.players.pop(t-9)
+            print('popping player:',t-9)
+            if (t-9) in self.players:  
+                self.players.pop(t-9)
             
+        # Bomb exploded
         if   120 < t :
             if t in self.bombs:
                 self.bombs.pop(t)

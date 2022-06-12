@@ -1,6 +1,9 @@
+from ipaddress import ip_address
+from socket import AF_INET6, inet_pton
 from typing import Tuple
 from common.payload import ACTIONS, Payload
 from common.state import Change, bytes_from_changes 
+from common.types import DEFAULT_PORT
 
 class Explosion:
 
@@ -21,11 +24,16 @@ class Explosion:
         for box in box_sectors:
             list_changes.append(Change((int(box[1]),int(box[2]),int(box[0])),(int(box[1]),int(box[2]),int(box[0]))))
         
+        destination = inet_pton(AF_INET6, ip_address(self.cli.lobby_addr[0]).exploded )
+        
         self.cli.seq_num += 1
         payload = Payload(ACTIONS, bytes_from_changes(list_changes), self.cli.lobby_uuid,
-                        self.cli.player_uuid, self.cli.seq_num)
+                        self.cli.player_uuid, self.cli.seq_num,self.cli.byte_address,destination, self.cli.lobby_addr[1])
         
-        self.cli.unicast(payload.to_bytes())
+        self.cli.client_cache.add_entry(
+                        (payload.short_destination, DEFAULT_PORT), payload)
+        
+        #self.cli.unicast(payload.to_bytes())
         
       
 
