@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from socket import IPPROTO_IPV6, IPPROTO_UDP, IPV6_JOIN_GROUP, IPV6_MULTICAST_HOPS, getaddrinfo, inet_ntop, socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT, inet_pton, getaddrinfo, timeout
 from threading import Thread, Lock
-from typing import Optional
+from typing import Dict, List, Optional
 
 from common.payload import GKALIVE, Payload
 from common.types import DEFAULT_PORT, MCAST_GROUP, MCAST_PORT, TIMEOUT, Position, Address, MobileMap
@@ -380,19 +380,16 @@ class EdgeNode(Thread):
             # Send messages to the mobile nodes
             outgoing = self.outgoing_mobile.get_entries_not_sent()
 
-            # get the preferred mobile node
-            out_addr = (self.preferred_mobile[0], DEFAULT_PORT)
-
+            outgoing_by_destination: Dict[Address, List[Payload]] = {}
             for (addr, payload) in outgoing:
-                preferred = (self._get_preferred_node(
-                    out_addr)[0], DEFAULT_PORT)
-                logging.info('Sending payload to {} {}.'.format(
-                    preferred, payload.type))
-                self.out_socket.sendto(payload.to_bytes(), preferred)
+                if addr not in outgoing_by_destination:
+                    outgoing_by_destination[addr] = []
+                outgoing_by_destination[addr].append(payload)
 
-            # TODO: Requires two changes that I can think of right now.
-            #      1. The mobile nodes will need a local cache of nearby nodes, this way they can send messages to their neighbors.
-            #      2. The same ACK system as on gateway.py#192 should be implemented on mobile nodes.
+            for (addr, packets) in outgoing_by_destination.items():
+                preferred = (self._get_preferred_node(addr)[0], DEFAULT_PORT)
+                for packet in packets:
+                    self.out_socket.sendto(packet.to_bytes(), preferred)
 
             time.sleep(0.033)
 
