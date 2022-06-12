@@ -1,9 +1,9 @@
+from dataclasses import dataclass, field
 from typing import Dict, List
-from common.types import Address
-
-Name = str
+from common.types import Interface, Prefix
 
 
+@dataclass
 class ForwardingInformationBase:
     """
     Forwarding Information Base (FIB)
@@ -14,13 +14,14 @@ class ForwardingInformationBase:
     Will be used to determine which iface to use
     when sending or requesting data.
     """
-    base: Dict[Name, List[Address]]
+    base: Dict[Prefix, List[Interface]] = field(
+        default_factory=dict, init=False)
     """A database of names and the addresses through which they are reachable."""
 
-    def __init__(self):
-        self.base = {}
+    def __hash__(self) -> int:
+        return super().__hash__()
 
-    def add(self, name, face):
+    def add(self, name: Prefix, face: Interface):
         """
         Add a new entry to the FIB
         """
@@ -28,7 +29,7 @@ class ForwardingInformationBase:
             self.base[name] = []
         self.base[name].append(face)
 
-    def remove(self, name, face):
+    def remove(self, name: Prefix, face: Interface):
         """
         Remove an entry from the FIB
         """
@@ -37,7 +38,7 @@ class ForwardingInformationBase:
             if len(self.base[name]) == 0:
                 del self.base[name]
 
-    def lookup(self, name):
+    def lookup(self, name: Prefix) -> List[Interface]:
         """
         Lookup a name in the FIB
         """

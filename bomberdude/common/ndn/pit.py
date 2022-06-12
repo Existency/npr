@@ -1,9 +1,9 @@
+from dataclasses import dataclass, field
 from typing import Dict, List
-from common.types import Address
-
-Name = str
+from common.types import Interface, Prefix
 
 
+@dataclass
 class PendingInterestTable:
     """
     The Pending Interest Table (PIT) is a table of all the prefixes
@@ -11,25 +11,26 @@ class PendingInterestTable:
 
     Will be used to direct the packets of data to the correct Ifaces.
     """
-    table: Dict[Name, List[Address]]
+    table: Dict[Prefix, List[Interface]] = field(
+        default_factory=dict, init=False)
     """A database of prefixes and the addresses that requested them."""
 
-    def __init__(self):
-        self.table = {}
+    def __hash__(self) -> int:
+        return super().__hash__()
 
-    def insert(self, name, faceid):
+    def insert(self, name: Prefix, faceid: Interface):
         if name in self.table:
             self.table[name].append(faceid)
         else:
             self.table[name] = [faceid]
 
-    def lookup(self, name):
+    def lookup(self, name: Prefix) -> List[Interface]:
         if name in self.table:
             return self.table[name]
         else:
             return []
 
-    def remove(self, name, faceid):
+    def remove(self, name: Prefix, faceid: Interface):
         if name in self.table:
             self.table[name].remove(faceid)
             if len(self.table[name]) == 0:

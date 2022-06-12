@@ -46,3 +46,14 @@ MCAST_PORT = 9998
 """Port used by the DTN nodes."""
 
 DEFAULT_PORT = 9999
+
+
+###############################################
+# NDN specific types                          #
+###############################################
+
+Interface = Address
+"""The address of the interface."""
+
+Prefix = str
+"""A prefix leading to data."""
