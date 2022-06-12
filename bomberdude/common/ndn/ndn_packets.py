@@ -36,6 +36,18 @@ class NDNPacket:
     def __hash__(self) -> int:
         return super().__hash__()
 
+    def is_data(self) -> bool:
+        """
+        Checks if the packet is a data packet.
+        """
+        return self.type
+
+    def is_interest(self) -> bool:
+        """
+        Checks if the packet is an interest packet.
+        """
+        return not self.type
+
     def get_name(self) -> str:
         """
         Retrieves the name of the packet.
