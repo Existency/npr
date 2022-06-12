@@ -1,6 +1,7 @@
 from __future__ import annotations
+from ipaddress import ip_address
 
-from common.types import DEFAULT_PORT, Address
+from common.types import DEFAULT_PORT, TIMEOUT, Address
 from .connection import Conn
 from common.state import GameState
 from common.payload import ACK, ACTIONS, KALIVE, STATE, Payload
@@ -8,7 +9,7 @@ from common.state import Change, bytes_from_changes, change_from_bytes
 from common.cache import Cache
 from dataclasses import dataclass, field
 import logging
-from socket import socket, timeout
+from socket import AF_INET6, inet_pton, socket, timeout
 from threading import Thread, Lock
 import time
 from typing import Dict, List, Optional, Tuple
@@ -218,11 +219,11 @@ class Lobby(Thread):
         while self.running:
 
             try:
-                data, _ = self.in_sock.recvfrom(1500)
+                data, addr = self.in_sock.recvfrom(1500)
 
                 # parse the data
                 payload = Payload.from_bytes(data)
-                logging.info('Received payload, %s %s', payload.type_str, payload.short_source)
+                logging.debug('Received payload, %s %s', payload.type_str, payload.short_source)
                 # get the conn that sent the data
                 conn = self.get_player_by_uuid(payload.player_uuid)
 
@@ -230,7 +231,15 @@ class Lobby(Thread):
                     # TODO: Change this later for NDN redirect support
                     logging.info('Connection not found.',)
                     continue
-
+                
+                addr_aux = (addr[0],DEFAULT_PORT)
+                
+                if conn.address != addr_aux:
+                    print("addresses ",addr_aux, conn.address,payload.short_source)
+                    conn.address = addr_aux
+                    
+                #    conn.byte_address = inet_pton(AF_INET6, ip_address(addr_aux[0]).exploded )
+                
                 # handle ACKs as these might have an invalid seq_num
                 if payload.is_ack:
                     self.outbound.purge_entry(
@@ -240,7 +249,7 @@ class Lobby(Thread):
                     # If the payload's sequence number is equal or older than the current one, discard
                     # TODO: This is a hack fix, will require some work later on.
                 if payload.seq_num <= conn.seq_num:
-                    print('Sequence number is older, %s', conn.__str__())
+                    #print('Sequence number is older, %s', conn.__str__())
                     logging.debug('Sequence number is older, %s',
                                   conn.__str__())
                  #   continue
@@ -269,7 +278,7 @@ class Lobby(Thread):
                             'Attempt to remove unexistent connection, %s', conn.__str__())
 
                 elif payload.is_kalive:
-                    logging.info('Received KALIVE, %s', conn.__str__())
+                    logging.debug('Received KALIVE, %s', conn.__str__())
                     conn.kalive()
 
                 else:
@@ -314,7 +323,7 @@ class Lobby(Thread):
                     'boxes': self.game_state.boxes
                 }
 
-            while start_time + 5 > time.time():
+            while start_time + 2 > time.time():
                 for k, v in _out.items():
                     data = json.dumps(v).encode()
                     payload = Payload(STATE, data, self.uuid,

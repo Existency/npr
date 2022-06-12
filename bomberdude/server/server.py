@@ -181,7 +181,7 @@ class Server(Thread):
             # TODO: This should be better handled. No sanitization is done here!
             name = inc.data.decode('utf-8') if inc.data != b'' else 'anonymous'
 
-            print("Source address bytes: ", str(inc.source))
+            #print("Source address bytes: ", str(inc.source))
             # create a new connection for the client
             conn = Conn(inc.source, name, time.time())
             # add the connection to the lobby

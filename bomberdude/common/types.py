@@ -46,3 +46,5 @@ MCAST_PORT = 9998
 """Port used by the DTN nodes."""
 
 DEFAULT_PORT = 9999
+
+TIMEOUT = 10

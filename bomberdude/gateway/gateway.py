@@ -12,12 +12,12 @@ import struct
 
 from dataclasses import dataclass, field
 from functools import cached_property
-from socket import IPPROTO_IPV6, IPPROTO_UDP, IPV6_JOIN_GROUP, IPV6_MULTICAST_HOPS, getaddrinfo, socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT, inet_pton, getaddrinfo, timeout
+from socket import IPPROTO_IPV6, IPPROTO_UDP, IPV6_JOIN_GROUP, IPV6_MULTICAST_HOPS, getaddrinfo, inet_ntop, socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT, inet_pton, getaddrinfo, timeout
 from threading import Thread, Lock
 from typing import Optional
 
 from common.payload import GKALIVE, Payload
-from common.types import DEFAULT_PORT, MCAST_GROUP, MCAST_PORT, Position, Address, MobileMap
+from common.types import DEFAULT_PORT, MCAST_GROUP, MCAST_PORT, TIMEOUT, Position, Address, MobileMap
 from common.cache import Cache
 from common.core_utils import get_node_distance, get_node_xy
 
@@ -198,7 +198,7 @@ class EdgeNode(Thread):
                 # update the node's data
                 self.mobile_nodes[addr] = (
                     distance, position, timestamp, hops)
-                logging.info('Received KALIVE from {}'.format(addr))
+                logging.debug('Received KALIVE from {}'.format(addr))
         except Exception as e:
             logging.error('Failed to handle KALIVE message: {}'.format(e))
 
@@ -253,7 +253,7 @@ class EdgeNode(Thread):
         self.last_update = time.time()
         while self.running:
             # Every 5 seconds update the preffered mobile node and set it's address as the default.
-            if time.time() - self.last_update > 5:
+            if time.time() - self.last_update > TIMEOUT:
                 self.last_update = time.time()
 
                 self.preferred_mobile = self._get_preferred_node()
@@ -270,10 +270,14 @@ class EdgeNode(Thread):
         while self.running:
             try:
                 data, addr = self.dtn_sock.recvfrom(1500)
-                logging.info('Received from {}'.format(addr))
 
                 address = (addr[0], addr[1])
 
+                if address[0] == inet_ntop(AF_INET6, self.gateway_dtn_address):
+                    continue
+                
+                logging.debug('Received from {}'.format(addr))
+                
                 payload = Payload.from_bytes(data)
 
                 if payload is None:
@@ -313,7 +317,6 @@ class EdgeNode(Thread):
         while self.running:
             try:
                 data, addr = self.in_socket.recvfrom(1500)
-                logging.info('Received from {}'.format(addr))
 
                 address = (addr[0], addr[1])
 
@@ -321,11 +324,13 @@ class EdgeNode(Thread):
                     self.preferred_mobile = address
 
                 payload = Payload.from_bytes(data)
-                logging.debug(
-                    'Received payload with type: {}'.format(payload.type_str))
+                logging.info(
+                    'Received payload: {} {}'.format(payload.type, addr[0]))
 
                 # Figure whether the message is from the server or from a mobile node
-                if address == self.server_address:
+                #print("addresses ",address[0],self.server_address[0])
+                if address[0] == self.server_address[0]:
+                    logging.info('Received message from server.')
                     # if the message is an ack, remove the data from the outgoing_server cache
                     if payload.is_ack:
                         # the message's destination is the address of the sender of the original message
@@ -335,7 +340,6 @@ class EdgeNode(Thread):
                             destination, payload)
 
                     self.outgoing_mobile.add_entry(address, payload)
-                    logging.info('Received message from server.')
 
                 else:
                     # handle ACK messages
@@ -374,7 +378,7 @@ class EdgeNode(Thread):
             #print("outgoing",outgoing)
             
             for (addr, payload) in outgoing:
-                #logging.info('Sending payload to {} {}'.format(payload.short_destination,payload.lobby_port))
+                #logging.info('Sending payload to {} {} {}'.format(payload.short_destination,payload.lobby_port,payload.type))
                 self.out_socket.sendto(payload.to_bytes(), (payload.short_destination,payload.lobby_port))
                 
 
@@ -382,11 +386,10 @@ class EdgeNode(Thread):
             outgoing = self.outgoing_mobile.get_entries_not_sent()
 
             # get the preferred mobile node
-            out_addr = self.preferred_mobile
+            out_addr = (self.preferred_mobile[0], DEFAULT_PORT)
 
             for (addr, payload) in outgoing:
-                logging.debug(
-                    'Sending payload to {} through {}.'.format(addr, out_addr))
+                logging.info('Sending payload to {} {}.'.format(out_addr, payload.type))
                 self.out_socket.sendto(payload.to_bytes(), out_addr)
 
             # TODO: Requires two changes that I can think of right now.

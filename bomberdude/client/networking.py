@@ -13,7 +13,7 @@ from typing import Tuple, List
 from threading import Thread, Lock
 from socket import IPPROTO_UDP, IPV6_JOIN_GROUP, getaddrinfo, socket, AF_INET6, SOCK_DGRAM, SOL_SOCKET, SO_REUSEADDR, timeout, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, inet_pton
 import json
-from common.types import DEFAULT_PORT, MCAST_GROUP, MCAST_PORT, Address, MobileMap, MobileMetrics, Position
+from common.types import DEFAULT_PORT, MCAST_GROUP, MCAST_PORT, TIMEOUT, Address, MobileMap, MobileMetrics, Position
 
 InboundQueue = List[Change]
 """A list of changes to be applied to the game state."""
@@ -121,6 +121,7 @@ class NetClient(Thread):
             level=self.log_level, format='%(levelname)s: %(message)s')
 
         if self.is_mobile:
+            self.dtn_running = True
             # if gateway_addr is not set, this is an error
             if self.gateway_addr == ('', 0):
                 logging.error("Gateway address not set on mobile node.")
@@ -145,8 +146,16 @@ class NetClient(Thread):
         """
         Method used to get the current location of the client.
         """
-        return get_node_xy(self.node_path)
-
+        position = (0,0)
+        
+        try:
+            position = get_node_xy(self.node_path)
+        
+        except Exception as i:
+            print(i)
+        
+        return position
+        
     @property
     def closest_gateway(self) -> Tuple[Address, MobileMetrics]:
         """
@@ -192,7 +201,7 @@ class NetClient(Thread):
         out_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         out_sock.settimeout(2)
 
-        print(self.byte_address)
+        #print(self.byte_address)
 
         payload = Payload(JOIN, b'', lobby_id, '',
                           self.seq_num, self.byte_address, self.byte_address, DEFAULT_PORT)
@@ -201,7 +210,7 @@ class NetClient(Thread):
                                 '', self.seq_num, self.byte_address, self.byte_address, DEFAULT_PORT)
         retry_bytes = retry_payload.to_bytes()
         self.seq_num = + 1
-        print("address: ", self.auth_ip)
+        #print("address: ", self.auth_ip)
         in_sock.sendto(payload.to_bytes(), self.auth_ip)
 
         _try = 0
@@ -336,7 +345,7 @@ class NetClient(Thread):
         """
         byte_address = inet_pton(AF_INET6, MCAST_GROUP)
 
-        while True:
+        while self.dtn_running:
             # check whether last kalive from server was more than 5 seconds ago
             #if time.time() - self.last_kalive > 5:
             #    logging.warning('Server not responding...')
@@ -354,7 +363,7 @@ class NetClient(Thread):
                                     self.byte_address, byte_address, MCAST_PORT)
 
             self.msender.sendto(payload.to_bytes(), self.mcast_addr)
-            print("Sending Kalive to ",self.mcast_addr)
+            #print("Sending Kalive to ",self.mcast_addr)
             time.sleep(0.5)
 
     def _broadcast_kalive_wired(self):
@@ -371,7 +380,7 @@ class NetClient(Thread):
         # non mobile clients
         while self.running:
             # check whether last kalive from server was more than 5 seconds ago
-            if time.time() - self.last_kalive > 5:
+            if time.time() - self.last_kalive > TIMEOUT:
                 logging.warning('Server not responding...')
 
             payload = Payload(KALIVE, data, self.lobby_uuid,
@@ -437,16 +446,15 @@ class NetClient(Thread):
             payloads = self.client_cache.get_entries_not_sent()
 
             # get prefered destination node
-            out_addr = (self.preferred_mobile[0],DEFAULT_PORT )
+            out_addr = (self.preferred_mobile[0],DEFAULT_PORT)
         
             
             for (addr, payload) in payloads:
-                logging.info(
-                    'Sending payload to {} through {}.'.format(addr, out_addr))
+                logging.info('Sending payload to {} through {} {}.'.format(addr, out_addr, payload.type))
                 payload.port = self.lobby_addr[1]
                 self.out_sock.sendto(payload.to_bytes(), out_addr)
-
-            time.sleep(0.1)
+                
+            time.sleep(0.03)
 
     def _handle_output_wired(self):
         """
@@ -471,7 +479,7 @@ class NetClient(Thread):
         Handles the data received from the DTN network.
         """
 
-        while True:
+        while self.dtn_running:
             try:
                 data, addr = self.dtn_sock.recvfrom(1500)
 
@@ -528,6 +536,8 @@ class NetClient(Thread):
                     continue
 
                 payload = Payload.from_bytes(data)
+                
+                #print("received ", payload.type)
 
                 if payload.is_redirect:
                     self.client_cache.add_entry(

@@ -12,7 +12,7 @@ from .enemy import Enemy
 from .algorithm import Algorithm
 from common.payload import ACTIONS, KALIVE, REJOIN, STATE, Payload, ACCEPT, LEAVE, JOIN, REDIRECT, REJECT
 from common.state import Change
-from common.types import DEFAULT_PORT
+from common.types import DEFAULT_PORT, TIMEOUT
 from threading import Thread
 
 TILE_WIDTH = 40
@@ -433,7 +433,7 @@ def main(cli):
     game_over(cli)
     
 def check_timeout(cli):
-    if time.time() - cli.last_kalive > 5:
+    if time.time() - cli.last_kalive > TIMEOUT:
         print('Timed Out')
         for e in enemy_list:
             e.life = False
@@ -522,6 +522,7 @@ def game_over(cli):
             time.sleep(2)
             break
         draw()
+        
         
         #cli.terminate('Game Over')
 

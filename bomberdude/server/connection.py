@@ -1,5 +1,5 @@
 from ipaddress import ip_address
-from common.types import DEFAULT_PORT
+from common.types import DEFAULT_PORT, TIMEOUT
 from common.uuid import uuid
 from dataclasses import dataclass, field
 from logging import Logger
@@ -58,7 +58,7 @@ class Conn:
 
         :return: True if the connection has timed out, False otherwise.
         """
-        return int(time.time()) - self.last_kalive > 5
+        return int(time.time()) - self.last_kalive > TIMEOUT
 
     def __post_init__(self):
         # use inet_ntop to convert the byte address to a string
