@@ -58,3 +58,9 @@ Interface = Address
 
 Prefix = str
 """A prefix leading to data."""
+
+# NDN Packet types
+PACKET_TYPE_DATA = 0
+PACKET_TYPE_INTEREST = 1
+NDNPacketType = bool
+"""Whether the packet is data or interest."""
