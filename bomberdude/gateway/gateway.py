@@ -384,9 +384,11 @@ class EdgeNode(Thread):
             out_addr = (self.preferred_mobile[0], DEFAULT_PORT)
 
             for (addr, payload) in outgoing:
+                preferred = (self._get_preferred_node(
+                    out_addr)[0], DEFAULT_PORT)
                 logging.info('Sending payload to {} {}.'.format(
-                    out_addr, payload.type))
-                self.out_socket.sendto(payload.to_bytes(), out_addr)
+                    preferred, payload.type))
+                self.out_socket.sendto(payload.to_bytes(), preferred)
 
             # TODO: Requires two changes that I can think of right now.
             #      1. The mobile nodes will need a local cache of nearby nodes, this way they can send messages to their neighbors.
