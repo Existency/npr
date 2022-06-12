@@ -49,14 +49,14 @@ pattern: str = '!Bl4s4slB16s16sl'
     - 4s: The player's uuid.            (4 bytes)
     - l: The payload's seqnum.          (4 bytes)
     - B: The payload's ttl.             (1 byte)
-    - 16s: The payload's source.         (16 bytes)
-    - 16s: The payload's destination.    (16 bytes)
-    - l : Lobby port                    (2 bytes)
+    - 16s: The payload's source.        (16 bytes)
+    - 16s: The payload's destination.   (16 bytes)
+    - l : Lobby port                    (4 bytes)
     ----------------------------------------------
-    Total:                               52 bytes
+    Total:                               54 bytes
 """
 
-OFFSET: int = 54  # 1 + 4 + 4 + 4 + 4 + 1 + 16 + 16
+OFFSET: int = 54  # 1 + 4 + 4 + 4 + 4 + 1 + 16 + 16 + 4 = 54
 """The header's offset in bytes."""
 
 
@@ -93,7 +93,7 @@ class Payload:
     """The source of the payload. (16 Bytes)"""
     destination: bytes
     """The destination of the payload. (16 Bytes)"""
-    lobby_port: int 
+    lobby_port: int
     """port of the lobby. 2 bytes"""
     ttl: int = field(default=3)
     """The time to live of the packet, capped at 3. (1 Byte)"""
@@ -212,7 +212,7 @@ class Payload:
         """
         Retrieves the short representation of the destination.
         """
-        #print("destination",self.destination)
+        # print("destination",self.destination)
         return ip_address(self.destination).compressed
 
     @cached_property
@@ -250,16 +250,16 @@ class Payload:
         lobby_bytes = bytes(self.lobby_uuid, 'utf-8')
         player_bytes = bytes(self.player_uuid, 'utf-8')
 
-        #print the type of pattern, lobby_bytes, player_bytes
-        #print(type(self.type))
-        #print(type(self.length))
-        #print(type(lobby_bytes))
-        #print(type(player_bytes))
-        #print(type(self.seq_num))
-        #print(type(self.ttl))
-        #print(type(self.source))
-        #print(type(self.destination))
-        #print(type(self.lobby_port))
+        # print the type of pattern, lobby_bytes, player_bytes
+        # print(type(self.type))
+        # print(type(self.length))
+        # print(type(lobby_bytes))
+        # print(type(player_bytes))
+        # print(type(self.seq_num))
+        # print(type(self.ttl))
+        # print(type(self.source))
+        # print(type(self.destination))
+        # print(type(self.lobby_port))
 
         return struct.pack(
             pattern,
