@@ -48,3 +48,13 @@ MCAST_PORT = 9998
 DEFAULT_PORT = 9999
 
 TIMEOUT = 10
+
+###############################################
+# NDN specific types                          #
+###############################################
+
+Interface = Address
+"""The address of the interface."""
+
+Prefix = str
+"""A prefix leading to data."""
